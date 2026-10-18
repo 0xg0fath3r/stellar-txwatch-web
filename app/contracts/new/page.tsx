@@ -17,6 +17,13 @@ interface FormErrors {
   rules?: string
   wallet?: string
   network?: string
+  signers?: string
+}
+
+const STELLAR_PUBLIC_KEY_REGEX = /^G[A-Z2-7]{55}$/
+
+function isValidPublicKey(key: string): boolean {
+  return STELLAR_PUBLIC_KEY_REGEX.test(key)
 }
 
 export default function NewContractPage() {
@@ -28,6 +35,8 @@ export default function NewContractPage() {
   const [network, setNetwork] = useState<Network>('testnet')
   const [webhookUrl, setWebhookUrl] = useState('')
   const [rules, setRules] = useState<AlertRule[]>([])
+  const [signers, setSigners] = useState<string[]>([])
+  const [signerInput, setSignerInput] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
   const [saving, setSaving] = useState(false)
   const [testStatus, setTestStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle')
@@ -38,8 +47,36 @@ export default function NewContractPage() {
 
   useEffect(() => () => testAbortRef.current?.abort(), [])
 
+  // Pre-fill the connected wallet as the first signer (only when empty)
+  useEffect(() => {
+    if (publicKey && signers.length === 0) {
+      setSigners([publicKey])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publicKey])
+
   function handleWalletConnect() {
     setErrors((prev) => ({ ...prev, wallet: undefined }))
+  }
+
+  function addSigner() {
+    const trimmed = signerInput.trim()
+    if (!trimmed) return
+    if (!isValidPublicKey(trimmed)) {
+      setErrors((prev) => ({ ...prev, signers: 'Must be a valid Stellar public key (starts with G, 56 chars)' }))
+      return
+    }
+    if (signers.includes(trimmed)) {
+      setErrors((prev) => ({ ...prev, signers: 'Signer already added' }))
+      return
+    }
+    setSigners([...signers, trimmed])
+    setSignerInput('')
+    setErrors((prev) => ({ ...prev, signers: undefined }))
+  }
+
+  function removeSigner(key: string) {
+    setSigners(signers.filter((s) => s !== key))
   }
 
   function validate(): FormErrors {
@@ -52,7 +89,6 @@ export default function NewContractPage() {
     if (!trimmedContractId) e.contract_id = 'Contract ID is required'
     else if (!isValidContractId(trimmedContractId)) e.contract_id = 'Must be a valid Soroban contract address (starts with C, 56 chars)'
     else {
-      // Check for duplicate contract_id + network combination
       const isDuplicate = getContracts().some(
         (c) => c.contract_id === trimmedContractId && c.network === network
       )
@@ -119,7 +155,9 @@ export default function NewContractPage() {
       network,
       rules,
       webhook_url: webhookUrl.trim(),
+      signers: signers.length > 0 ? signers : undefined,
       created_at: Date.now(),
+      updated_at: Date.now(),
     }
     saveContract(contract)
     try {
@@ -151,7 +189,13 @@ export default function NewContractPage() {
     setTestError(null)
     setTestStatusCode(null)
     try {
-      const { status, ok } = await sendTestWebhook(trimmedWebhookUrl, trimmedContractId, network, controller.signal)
+      const { status, ok } = await sendTestWebhook(
+        trimmedWebhookUrl,
+        trimmedContractId,
+        network,
+        controller.signal,
+        signers.length > 0 ? signers : undefined
+      )
       setTestStatusCode(status)
       if (ok) {
         setTestStatus('ok')
@@ -256,6 +300,54 @@ export default function NewContractPage() {
           {errors.webhook_url && <p className="mt-1 text-xs text-red-400">{errors.webhook_url}</p>}
           {testStatus === 'error' && testError && <p className="mt-1 text-xs text-red-400">{testError}</p>}
           {testStatus === 'ok' && <p className="mt-1 text-xs text-emerald-400">Test payload delivered — {testStatusCode} received</p>}
+        </div>
+
+        {/* Signers */}
+        <div>
+          <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+            Signers <span className="text-zinc-500 font-normal">(multi-signature support)</span>
+          </label>
+          {signers.length > 0 && (
+            <ul className="space-y-2 mb-2">
+              {signers.map((s) => (
+                <li key={s} className="flex items-center justify-between rounded-lg px-3 py-2 bg-zinc-900 border border-zinc-800">
+                  <span className="text-xs font-mono text-zinc-300">
+                    {s.slice(0, 8)}…{s.slice(-6)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeSigner(s)}
+                    className="text-zinc-600 hover:text-red-400 transition-colors"
+                    aria-label="Remove signer"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="G... Stellar public key"
+              value={signerInput}
+              onChange={(e) => { setSignerInput(e.target.value); setErrors((prev) => ({ ...prev, signers: undefined })) }}
+              className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
+            />
+            <button
+              type="button"
+              onClick={addSigner}
+              className="px-3 py-2.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors whitespace-nowrap"
+            >
+              Add Signer
+            </button>
+          </div>
+          <p className="mt-1.5 text-xs text-zinc-400">
+            Your connected Freighter wallet is included automatically. Add more public keys for multi-sig contracts.
+          </p>
+          {errors.signers && <p className="mt-1 text-xs text-red-400">{errors.signers}</p>}
         </div>
 
         {/* Alert Rules */}

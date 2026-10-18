@@ -21,6 +21,7 @@ export interface WatchedContract {
   network: Network
   rules: AlertRule[]
   webhook_url: string
+  signers?: string[]
   created_at: number
   updated_at: number
 }
@@ -35,4 +36,5 @@ export interface AlertPayload {
   amount?: number
   timestamp: number
   horizon_link: string
+  signers?: string[]
 }

@@ -55,6 +55,13 @@ export default function ContractCard({ contract, lastAlertTime, highlight }: Con
         <span>
           <span className="text-zinc-300 font-medium">{contract.rules.length}</span>{' '}
           {contract.rules.length === 1 ? 'rule' : 'rules'} active
+          {contract.signers && contract.signers.length > 0 && (
+            <>
+              {' · '}
+              <span className="text-zinc-300 font-medium">{contract.signers.length}</span>{' '}
+              {contract.signers.length === 1 ? 'signer' : 'signers'}
+            </>
+          )}
         </span>
         {lastAlertTime ? (
           <span>Last alert {formatDate(lastAlertTime)}</span>

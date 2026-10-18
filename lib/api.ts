@@ -44,8 +44,9 @@ export async function sendTestWebhook(
   webhookUrl: string,
   contractId: string,
   network: Network = 'testnet',
-  timeoutMs = 10000
-): Promise<void> {
+  signal?: AbortSignal,
+  signers?: string[]
+): Promise<{ status: number; ok: boolean }> {
   const payload = {
     label: 'Test Alert',
     contract_id: contractId,
@@ -55,28 +56,14 @@ export async function sendTestWebhook(
       'TEST_HASH_0000000000000000000000000000000000000000000000000000000000000000',
     timestamp: Date.now(),
     horizon_link: `${HORIZON_URLS[network]}/transactions/test`,
+    ...(signers && signers.length > 0 ? { signers } : {}),
   }
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-
-  try {
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    })
-    if (!res.ok) {
-      throw new Error(`Webhook returned ${res.status}`)
-    }
-  } catch (error) {
-    const err = error as { name?: string }
-    if (err?.name === 'AbortError') {
-      throw new Error('Webhook request timed out')
-    }
-    throw error
-  } finally {
-    clearTimeout(timeoutId)
-  }
+  const res = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal,
+  })
+  return { status: res.status, ok: res.ok }
 }
