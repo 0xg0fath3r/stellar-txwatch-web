@@ -25,6 +25,8 @@ export interface WatchedContract {
   updated_at: number
 }
 
+export type DeliveryStatus = 'delivered' | 'retrying' | 'failed'
+
 export interface AlertPayload {
   label: string
   contract_id: string
@@ -35,4 +37,11 @@ export interface AlertPayload {
   amount?: number
   timestamp: number
   horizon_link: string
+  /** Webhook delivery status reported by the core engine.
+   *  Absent for older alerts stored before this field existed. */
+  delivery_status?: DeliveryStatus
+  /** Number of retry attempts the core engine has made for this alert. */
+  delivery_retry_count?: number
+  /** Timestamp (ms) of the last delivery attempt. */
+  delivery_last_attempt?: number
 }
