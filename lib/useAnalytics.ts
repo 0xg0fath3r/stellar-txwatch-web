@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /**
  * useAnalytics
  *
@@ -16,6 +17,8 @@ export type AnalyticsEventName =
   | 'rule_edit_cancelled'
   | 'rule_added'
   | 'rule_removed'
+  | 'metadata_edit_opened'
+  | 'metadata_edit_saved'
 
 export interface AnalyticsEventProperties {
   contractId?: string
@@ -25,6 +28,7 @@ export interface AnalyticsEventProperties {
 }
 
 // Stub: replace this function body to integrate a real analytics provider.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function trackEventStub(
   _event: AnalyticsEventName,
   _properties?: AnalyticsEventProperties,

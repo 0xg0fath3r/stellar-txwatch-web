@@ -4,6 +4,7 @@ import Link from 'next/link'
 import FreighterConnect from '@/components/FreighterConnect'
 import WalletStatusBadge from '@/components/WalletStatusBadge'
 import MobileNav from '@/components/MobileNav'
+import WebPushNotifications from '@/components/WebPushNotifications'
 
 export const metadata: Metadata = {
   title: 'TxWatch — Soroban Contract Monitoring',
@@ -47,6 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
           {children}
         </main>
+        <WebPushNotifications />
       </body>
     </html>
   )
