@@ -233,3 +233,63 @@ export function onContractsChange(callback: () => void): () => void {
   window.addEventListener('storage', handler)
   return () => window.removeEventListener('storage', handler)
 }
+
+// ===== User Settings =====
+
+const SETTINGS_KEY = 'txwatch_settings'
+const DEFAULT_ALERT_RETENTION_DAYS = 90
+
+export type ThemePreference = 'light' | 'dark' | 'system'
+
+export interface AppSettings {
+  defaultNetwork: Network
+  alertRetentionDays: number
+  theme: ThemePreference
+}
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  defaultNetwork: 'testnet',
+  alertRetentionDays: DEFAULT_ALERT_RETENTION_DAYS,
+  theme: 'system',
+}
+
+export function getSettings(): AppSettings {
+  const storage = getStorage()
+  if (!storage) return DEFAULT_SETTINGS
+  try {
+    const raw = storage.getItem(SETTINGS_KEY)
+    if (!raw) return DEFAULT_SETTINGS
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) }
+  } catch {
+    return DEFAULT_SETTINGS
+  }
+}
+
+export function saveSettings(partial: Partial<AppSettings>): AppSettings {
+  const storage = getStorage()
+  const next = { ...getSettings(), ...partial }
+  if (storage) storage.setItem(SETTINGS_KEY, JSON.stringify(next))
+  return next
+}
+
+export function resetSettings(): AppSettings {
+  const storage = getStorage()
+  if (storage) storage.setItem(SETTINGS_KEY, JSON.stringify(DEFAULT_SETTINGS))
+  return DEFAULT_SETTINGS
+}
+
+export function exportAllLocalData(): string {
+  const storage = getStorage()
+  if (!storage) return '{}'
+  const data: Record<string, string | null> = {}
+  for (let i = 0; i < storage.length; i++) {
+    const key = storage.key(i)
+    if (key) data[key] = storage.getItem(key)
+  }
+  return JSON.stringify(data, null, 2)
+}
+
+export function clearAllLocalData(): void {
+  const storage = getStorage()
+  if (storage) storage.clear()
+}
