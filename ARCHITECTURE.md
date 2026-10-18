@@ -28,6 +28,7 @@ This document maps key files and directories to their functional areas, helping 
 | `NetworkBadge.tsx` | Network indicator — Mainnet/Testnet/Futurenet badge |
 | `CopyButton.tsx` | Clipboard utility — copy contract ID, transaction hash |
 | `MobileNav.tsx` | Mobile navigation drawer — responsive menu |
+| `AlertHeatmap.tsx` | Contract activity heatmap — 30-day alert frequency visualization |
 | `EmptyState.tsx` | Empty list placeholder — no contracts, no rules, no history |
 
 ### `/lib` — Business Logic & Utilities

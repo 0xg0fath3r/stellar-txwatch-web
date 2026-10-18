@@ -12,7 +12,7 @@ import AlertRuleBadge from '@/components/AlertRuleBadge'
 import WebhookLog from '@/components/WebhookLog'
 import RuleBuilder from '@/components/RuleBuilder'
 import CopyButton from '@/components/CopyButton'
-import MetadataSection from '@/components/MetadataSection'
+import AlertHeatmap from '@/components/AlertHeatmap'
 
 export default function ContractDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -268,6 +268,14 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
             ))}
           </div>
         )}
+      </div>
+
+      {/* Activity Heatmap */}
+      <div>
+        <h2 className="text-lg font-semibold text-zinc-100 mb-3">Alert Activity</h2>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+          <AlertHeatmap alerts={alerts} contractId={contract.contract_id} />
+        </div>
       </div>
 
       {/* Alert History */}
