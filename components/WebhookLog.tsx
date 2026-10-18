@@ -45,10 +45,18 @@ function exportCSV(alerts: AlertPayload[]) {
 
 export default function WebhookLog({ alerts, network }: WebhookLogProps) {
   const [selectedFilter, setSelectedFilter] = useState<AlertRuleType | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
 
-  const filteredAlerts = selectedFilter
-    ? alerts.filter((a) => a.rule_triggered === selectedFilter)
-    : alerts
+  const filteredAlerts = alerts.filter((a) => {
+    const matchesRule =
+      !selectedFilter || a.rule_triggered === selectedFilter
+    const matchesSearch =
+      !searchQuery ||
+      a.transaction_hash
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase().trim())
+    return matchesRule && matchesSearch
+  })
 
   if (alerts.length === 0) {
     return (
@@ -86,6 +94,17 @@ export default function WebhookLog({ alerts, network }: WebhookLogProps) {
             {type}
           </button>
         ))}
+      </div>
+
+      {/* Search by transaction hash */}
+      <div className="flex justify-end mb-2">
+        <input
+          type="text"
+          placeholder="Search transaction hash…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="px-3 py-1.5 rounded-lg text-xs bg-zinc-950 border border-zinc-800 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-64"
+        />
       </div>
 
       {/* Export and Results */}
