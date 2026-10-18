@@ -1,10 +1,16 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { WatchedContract, Network } from '@/types'
 import { getContracts, getAlerts } from '@/lib/storage'
+import {
+  exportContractsAsBlob,
+  parseContractSnapshot,
+  validateSnapshotContracts,
+  restoreContractSnapshot,
+} from '@/lib/exportStorage'
 import ContractCard from '@/components/ContractCard'
 import EmptyState from '@/components/EmptyState'
 
@@ -59,6 +65,13 @@ export default function ContractsPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('flat')
   const [page, setPage] = useState(1)
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
+
+  // Export / Import state
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importSuccess, setImportSuccess] = useState<string | null>(null)
+  const [showImportConfirm, setShowImportConfirm] = useState(false)
+  const [pendingSnapshot, setPendingSnapshot] = useState<ReturnType<typeof parseContractSnapshot> | null>(null)
 
   useEffect(() => {
     const all = getContracts()
@@ -128,6 +141,59 @@ export default function ContractsPage() {
     }
     return groups
   }, [sorted])
+
+  // ---------- Export / Import ----------
+
+  function handleExport() {
+    const blob = exportContractsAsBlob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `txwatch-backup-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function handleImportFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImportError(null)
+    setImportSuccess(null)
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      try {
+        const json = event.target?.result as string
+        const snapshot = parseContractSnapshot(json)
+        const validationErrors = validateSnapshotContracts(snapshot)
+        if (validationErrors.length > 0) {
+          setImportError(`Import rejected: ${validationErrors[0]}`)
+          return
+        }
+        setPendingSnapshot(snapshot)
+        setShowImportConfirm(true)
+      } catch (err) {
+        setImportError(err instanceof Error ? err.message : 'Failed to read file')
+      }
+    }
+    reader.readAsText(file)
+    // Reset input so the same file can be re-imported
+    e.target.value = ''
+  }
+
+  function confirmImport() {
+    if (!pendingSnapshot) return
+    restoreContractSnapshot(pendingSnapshot)
+    setAllContracts(getContracts())
+    setShowImportConfirm(false)
+    setPendingSnapshot(null)
+    setImportSuccess(`Restored ${pendingSnapshot.count} contract${pendingSnapshot.count !== 1 ? 's' : ''} from backup`)
+  }
+
+  function cancelImport() {
+    setShowImportConfirm(false)
+    setPendingSnapshot(null)
+  }
 
   if (!mounted) return null
 
@@ -253,8 +319,96 @@ export default function ContractsPage() {
             <span className="hidden sm:inline">Add Contract</span>
             <span className="sm:hidden">Add</span>
           </Link>
+
+          {/* Export / Import */}
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="sr-only"
+            aria-hidden="true"
+            onChange={handleImportFileChange}
+          />
+          {hasAnyContracts && (
+            <button
+              type="button"
+              onClick={handleExport}
+              title="Export all contracts as JSON backup"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              <span className="hidden sm:inline">Export</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => { setImportError(null); setImportSuccess(null); importInputRef.current?.click() }}
+            title="Import contracts from a JSON backup"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12" />
+            </svg>
+            <span className="hidden sm:inline">Import</span>
+          </button>
         </div>
       </div>
+
+      {/* Import error / success messages */}
+      {importError && (
+        <div className="flex items-center gap-2 rounded-lg bg-red-900/20 border border-red-800 px-4 py-3 text-sm text-red-400">
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {importError}
+          <button type="button" onClick={() => setImportError(null)} className="ml-auto text-red-400 hover:text-red-200">✕</button>
+        </div>
+      )}
+      {importSuccess && (
+        <div className="flex items-center gap-2 rounded-lg bg-emerald-900/20 border border-emerald-800 px-4 py-3 text-sm text-emerald-400">
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          {importSuccess}
+          <button type="button" onClick={() => setImportSuccess(null)} className="ml-auto text-emerald-400 hover:text-emerald-200">✕</button>
+        </div>
+      )}
+
+      {/* Import confirmation modal */}
+      {showImportConfirm && pendingSnapshot && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 max-w-sm w-full space-y-4">
+            <h3 className="text-lg font-semibold text-zinc-100">Restore from Backup?</h3>
+            <div className="space-y-2 text-sm text-zinc-400">
+              <p>
+                This will overwrite your current contracts with{' '}
+                <span className="text-zinc-200 font-medium">{pendingSnapshot.count} contract{pendingSnapshot.count !== 1 ? 's' : ''}</span>{' '}
+                from the backup exported on{' '}
+                <span className="text-zinc-200">{new Date(pendingSnapshot.exportedAt).toLocaleDateString()}</span>.
+              </p>
+              <p className="text-xs text-zinc-500">Existing contracts not in the backup will be removed.</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={confirmImport}
+                className="flex-1 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
+              >
+                Restore
+              </button>
+              <button
+                type="button"
+                onClick={cancelImport}
+                className="flex-1 px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!hasAnyContracts ? (
         <EmptyState

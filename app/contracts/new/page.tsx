@@ -9,11 +9,13 @@ import { sendTestWebhook } from '@/lib/api'
 import { useFreighterConnection } from '@/lib/useFreighterConnection'
 import RuleBuilder from '@/components/RuleBuilder'
 import FreighterConnect from '@/components/FreighterConnect'
+import Toast from '@/components/Toast'
 
 interface FormErrors {
   label?: string
   contract_id?: string
   webhook_url?: string
+  fallback_webhook_url?: string
   rules?: string
   wallet?: string
   network?: string
@@ -21,12 +23,13 @@ interface FormErrors {
 
 export default function NewContractPage() {
   const router = useRouter()
-  const { isConnected, publicKey } = useFreighterConnection()
+  const { isConnected } = useFreighterConnection()
   const [networkWarning, setNetworkWarning] = useState<string | null>(null)
   const [label, setLabel] = useState('')
   const [contractId, setContractId] = useState('')
   const [network, setNetwork] = useState<Network>('testnet')
   const [webhookUrl, setWebhookUrl] = useState('')
+  const [fallbackWebhookUrl, setFallbackWebhookUrl] = useState('')
   const [rules, setRules] = useState<AlertRule[]>([])
   const [errors, setErrors] = useState<FormErrors>({})
   const [saving, setSaving] = useState(false)
@@ -47,6 +50,7 @@ export default function NewContractPage() {
     const trimmedLabel = label.trim()
     const trimmedContractId = contractId.trim()
     const trimmedWebhookUrl = webhookUrl.trim()
+    const trimmedFallbackUrl = fallbackWebhookUrl.trim()
 
     if (!trimmedLabel) e.label = 'Label is required'
     if (!trimmedContractId) e.contract_id = 'Contract ID is required'
@@ -60,11 +64,15 @@ export default function NewContractPage() {
     }
     if (!trimmedWebhookUrl) e.webhook_url = 'Webhook URL is required'
     else if (!isValidUrl(trimmedWebhookUrl)) e.webhook_url = 'Must be a valid http/https URL'
+    if (trimmedFallbackUrl && !isValidUrl(trimmedFallbackUrl)) {
+      e.fallback_webhook_url = 'Must be a valid http/https URL'
+    }
     if (rules.length === 0) e.rules = 'Add at least one alert rule'
     return e
   }
 
   function isFormValid(): boolean {
+    const trimmedFallback = fallbackWebhookUrl.trim()
     return (
       label.trim().length > 0 &&
       label.length <= 100 &&
@@ -72,12 +80,9 @@ export default function NewContractPage() {
       isValidContractId(contractId.trim()) &&
       webhookUrl.trim().length > 0 &&
       isValidUrl(webhookUrl.trim()) &&
+      (trimmedFallback === '' || isValidUrl(trimmedFallback)) &&
       rules.length > 0
     )
-  }
-
-  function isWalletConnected(): boolean {
-    return isConnected && !!publicKey
   }
 
   async function checkNetworkMismatch(selectedNetwork: Network) {
@@ -112,6 +117,7 @@ export default function NewContractPage() {
     }
 
     setSaving(true)
+    const trimmedFallback = fallbackWebhookUrl.trim()
     const contract: WatchedContract = {
       id: crypto.randomUUID(),
       label: label.trim(),
@@ -119,7 +125,9 @@ export default function NewContractPage() {
       network,
       rules,
       webhook_url: webhookUrl.trim(),
+      ...(trimmedFallback ? { fallback_webhook_url: trimmedFallback } : {}),
       created_at: Date.now(),
+      updated_at: Date.now(),
     }
     saveContract(contract)
     try {
@@ -258,10 +266,31 @@ export default function NewContractPage() {
           {testStatus === 'ok' && <p className="mt-1 text-xs text-emerald-400">Test payload delivered — {testStatusCode} received</p>}
         </div>
 
+        {/* Fallback Webhook URL */}
+        <div>
+          <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+            Fallback Webhook <span className="text-zinc-500 font-normal">(optional)</span>
+          </label>
+          <input
+            type="url"
+            placeholder="https://your-backup-server.com/webhook"
+            value={fallbackWebhookUrl}
+            onChange={(e) => { setFallbackWebhookUrl(e.target.value); setErrors((prev) => ({ ...prev, fallback_webhook_url: undefined })) }}
+            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
+          />
+          <p className="mt-1.5 text-xs text-zinc-400">Used as an escalation endpoint if the primary webhook fails after retries</p>
+          {errors.fallback_webhook_url && <p className="mt-1 text-xs text-red-400">{errors.fallback_webhook_url}</p>}
+        </div>
+
         {/* Alert Rules */}
         <div>
           <label className="block text-sm font-medium text-zinc-300 mb-1.5">Alert Rules</label>
-          <RuleBuilder rules={rules} onChange={setRules} />
+          <RuleBuilder
+            rules={rules}
+            onChange={setRules}
+            contractId={contractId.trim() || undefined}
+            network={network}
+          />
           {errors.rules && <p className="mt-1 text-xs text-red-400">{errors.rules}</p>}
         </div>
 

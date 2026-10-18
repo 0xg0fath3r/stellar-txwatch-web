@@ -13,6 +13,7 @@ interface ContractCardProps {
 
 export default function ContractCard({ contract, lastAlertTime, highlight }: ContractCardProps) {
   const hasWebhook = Boolean(contract.webhook_url)
+  const hasFallbackWebhook = Boolean(contract.fallback_webhook_url)
   const [active, setActive] = useState(highlight)
 
   useEffect(() => {
@@ -38,7 +39,20 @@ export default function ContractCard({ contract, lastAlertTime, highlight }: Con
             {truncateId(contract.contract_id)}
           </p>
         </div>
-        <NetworkBadge network={contract.network} />
+        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+          <NetworkBadge network={contract.network} />
+          {hasFallbackWebhook && (
+            <span
+              className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-400 border border-indigo-500/20"
+              title={`Fallback webhook: ${contract.fallback_webhook_url}`}
+            >
+              <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+              </svg>
+              Fallback
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Webhook status indicator */}

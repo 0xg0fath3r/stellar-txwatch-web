@@ -4,6 +4,7 @@ import Link from 'next/link'
 import FreighterConnect from '@/components/FreighterConnect'
 import WalletStatusBadge from '@/components/WalletStatusBadge'
 import MobileNav from '@/components/MobileNav'
+import HeaderSyncStatus from '@/components/HeaderSyncStatus'
 
 export const metadata: Metadata = {
   title: 'TxWatch — Soroban Contract Monitoring',
@@ -37,6 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </nav>
 
             <div className="flex items-center gap-3">
+              <HeaderSyncStatus />
               <WalletStatusBadge />
               <FreighterConnect />
             </div>

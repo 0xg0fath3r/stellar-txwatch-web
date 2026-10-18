@@ -10,6 +10,7 @@ declare global {
       getNetwork: () => Promise<string>
       signTransaction: (xdr: string, options: { networkPassphrase: string }) => Promise<string>
     }
+    __freighterPublicKey?: string | null
   }
 }
 

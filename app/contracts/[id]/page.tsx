@@ -12,7 +12,6 @@ import AlertRuleBadge from '@/components/AlertRuleBadge'
 import WebhookLog from '@/components/WebhookLog'
 import RuleBuilder from '@/components/RuleBuilder'
 import CopyButton from '@/components/CopyButton'
-import MetadataSection from '@/components/MetadataSection'
 
 export default function ContractDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -31,6 +30,7 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   const [showEditMetadata, setShowEditMetadata] = useState(false)
   const [editedLabel, setEditedLabel] = useState('')
   const [editedWebhookUrl, setEditedWebhookUrl] = useState('')
+  const [editedFallbackWebhookUrl, setEditedFallbackWebhookUrl] = useState('')
   const [metadataError, setMetadataError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -87,41 +87,45 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   function openEditMetadata() {
     setEditedLabel(contract!.label)
     setEditedWebhookUrl(contract!.webhook_url)
+    setEditedFallbackWebhookUrl(contract!.fallback_webhook_url ?? '')
     setMetadataError(null)
     setShowEditMetadata(true)
     trackEvent('metadata_edit_opened', { contractId: params.id })
   }
 
   function saveMetadata() {
-    // Validation
     const trimmedLabel = editedLabel.trim()
     const trimmedWebhookUrl = editedWebhookUrl.trim()
+    const trimmedFallbackUrl = editedFallbackWebhookUrl.trim()
 
     if (!trimmedLabel) {
       setMetadataError('Label is required')
       return
     }
-
     if (trimmedLabel.length > 100) {
       setMetadataError('Label must be 100 characters or less')
       return
     }
-
     if (!trimmedWebhookUrl) {
       setMetadataError('Webhook URL is required')
       return
     }
-
     if (!isValidUrl(trimmedWebhookUrl)) {
       setMetadataError('Please enter a valid HTTP or HTTPS URL')
       return
     }
+    if (trimmedFallbackUrl && !isValidUrl(trimmedFallbackUrl)) {
+      setMetadataError('Fallback webhook must be a valid HTTP or HTTPS URL')
+      return
+    }
 
-    // Save changes
-    const updated = { 
+    const updated: WatchedContract = { 
       ...contract!, 
       label: trimmedLabel,
-      webhook_url: trimmedWebhookUrl
+      webhook_url: trimmedWebhookUrl,
+      ...(trimmedFallbackUrl
+        ? { fallback_webhook_url: trimmedFallbackUrl }
+        : { fallback_webhook_url: undefined }),
     }
     saveContract(updated)
     setContract(updated)
@@ -130,7 +134,11 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   }
 
   function hasMetadataChanges(): boolean {
-    return editedLabel !== contract?.label || editedWebhookUrl !== contract?.webhook_url
+    return (
+      editedLabel !== contract?.label ||
+      editedWebhookUrl !== contract?.webhook_url ||
+      editedFallbackWebhookUrl !== (contract?.fallback_webhook_url ?? '')
+    )
   }
 
   function handleCancelMetadataEdit() {
@@ -182,6 +190,17 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold text-zinc-100">{contract.label}</h1>
             <NetworkBadge network={contract.network} />
+            {contract.fallback_webhook_url && (
+              <span
+                className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-400 border border-indigo-500/20"
+                title={`Fallback webhook active: ${contract.fallback_webhook_url}`}
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+                Fallback active
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <a
@@ -232,6 +251,22 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
           >
             {contract.webhook_url}
           </a>
+          {contract.fallback_webhook_url && (
+            <div className="mt-2 pt-2 border-t border-zinc-800">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs text-zinc-500">Fallback Webhook</p>
+                <CopyButton text={contract.fallback_webhook_url} />
+              </div>
+              <a
+                href={contract.fallback_webhook_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors break-all"
+              >
+                {contract.fallback_webhook_url}
+              </a>
+            </div>
+          )}
         </div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
           <p className="text-xs text-zinc-500 mb-1">Registered</p>
@@ -321,6 +356,24 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
                   Must be a valid HTTP or HTTPS URL
                 </p>
               </div>
+
+              {/* Fallback Webhook URL field */}
+              <div>
+                <label htmlFor="edit-fallback-webhook" className="block text-sm font-medium text-zinc-300 mb-2">
+                  Fallback Webhook <span className="text-zinc-500 font-normal">(optional)</span>
+                </label>
+                <input
+                  id="edit-fallback-webhook"
+                  type="url"
+                  value={editedFallbackWebhookUrl}
+                  onChange={(e) => setEditedFallbackWebhookUrl(e.target.value)}
+                  placeholder="https://backup.example.com/webhook"
+                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+                <p className="text-xs text-zinc-500 mt-1">
+                  Used as escalation endpoint if the primary webhook fails after retries. Leave blank to remove.
+                </p>
+              </div>
             </div>
 
             {metadataError && (
@@ -390,6 +443,8 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
             <RuleBuilder
               rules={editedRules}
               onChange={setEditedRules}
+              contractId={contract.contract_id}
+              network={contract.network}
               onRulesChanged={(rules, action) =>
                 trackEvent(action === 'remove' ? 'rule_removed' : 'rule_added', {
                   contractId: params.id,

@@ -1,12 +1,11 @@
 import { HORIZON_URLS } from '@/lib/stellar'
-import type { Network } from '@/types'
+import type { Network, WatchedContract } from '@/types'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
-function getAuthHeaders(): Record<string, string> {
-  // Extension point for future authenticated requests
-  // Implement token/header logic here
-  return {}
+/** Returns true when the backend API is configured. */
+export function isApiConfigured(): boolean {
+  return BASE_URL.length > 0
 }
 
 export async function apiFetch<T>(
@@ -40,12 +39,30 @@ export async function apiFetch<T>(
   return res.json() as Promise<T>
 }
 
+/** Fetch all contracts from the backend API (GET /contracts). */
+export async function fetchContractsFromApi(): Promise<WatchedContract[]> {
+  return apiFetch<WatchedContract[]>('/contracts')
+}
+
+/** Save (upsert) a contract to the backend API (POST /contracts). */
+export async function saveContractToApi(contract: WatchedContract): Promise<WatchedContract> {
+  return apiFetch<WatchedContract>('/contracts', {
+    method: 'POST',
+    body: JSON.stringify(contract),
+  })
+}
+
+/** Delete a contract from the backend API (DELETE /contracts/:id). */
+export async function deleteContractFromApi(id: string): Promise<void> {
+  await apiFetch<void>(`/contracts/${id}`, { method: 'DELETE' })
+}
+
 export async function sendTestWebhook(
   webhookUrl: string,
   contractId: string,
   network: Network = 'testnet',
-  timeoutMs = 10000
-): Promise<void> {
+  signalOrTimeout?: AbortSignal | number
+): Promise<{ status: number; ok: boolean }> {
   const payload = {
     label: 'Test Alert',
     contract_id: contractId,
@@ -57,19 +74,26 @@ export async function sendTestWebhook(
     horizon_link: `${HORIZON_URLS[network]}/transactions/test`,
   }
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  let signal: AbortSignal | undefined
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+  if (signalOrTimeout instanceof AbortSignal) {
+    signal = signalOrTimeout
+  } else {
+    const timeoutMs = typeof signalOrTimeout === 'number' ? signalOrTimeout : 10000
+    const controller = new AbortController()
+    timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+    signal = controller.signal
+  }
 
   try {
     const res = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: controller.signal,
+      signal,
     })
-    if (!res.ok) {
-      throw new Error(`Webhook returned ${res.status}`)
-    }
+    return { status: res.status, ok: res.ok }
   } catch (error) {
     const err = error as { name?: string }
     if (err?.name === 'AbortError') {
@@ -77,6 +101,6 @@ export async function sendTestWebhook(
     }
     throw error
   } finally {
-    clearTimeout(timeoutId)
+    if (timeoutId !== undefined) clearTimeout(timeoutId)
   }
 }
