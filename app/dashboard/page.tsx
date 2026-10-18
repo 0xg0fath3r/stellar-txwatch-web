@@ -57,6 +57,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {[
           { label: 'Contracts Watched', value: contracts.length, href: '/contracts' },
+          { label: 'Alert Rules Active', value: contracts.reduce((sum, c) => sum + (c.rules?.length ?? 0), 0), href: '/contracts?filter=rules' },
           { label: 'Alerts Today', value: alertsToday, href: '/contracts?filter=alerts' },
           { label: 'Active Webhooks', value: activeWebhooks, href: '/contracts?filter=webhooks' },
         ].map((stat) => (
