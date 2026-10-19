@@ -313,24 +313,31 @@ The dashboard currently operates in two modes:
 
 ## Screenshots
 
-### Landing Page
-The landing page introduces the dashboard and provides quick access to wallet connection and contract registration.
+> All captures use the default dark theme. See [`docs/images/README.md`](./docs/images/README.md) for how to capture and optimise new images.
+
+### Demo
+
+Registering a contract and sending a test webhook:
+
+![Demo: registering a contract and testing a webhook](./docs/images/demo.gif)
 
 ### Dashboard
-The dashboard displays registered contracts in a grid layout with summary cards showing contract ID, network, and alert rule count.
+
+Registered contracts in a grid with summary cards showing contract ID, network and alert rule count.
+
+![Dashboard](./docs/images/dashboard.png)
+
+### Add Contract
+
+Enter a contract ID (validated against the Soroban address format), pick a network, configure alert rules and test webhook delivery before going live.
+
+![Add contract form](./docs/images/add-contract.png)
 
 ### Contract Detail
-The contract detail page shows:
-- Contract metadata (ID, network, registration date)
-- Configured alert rules with type badges
-- Webhook delivery history with transaction links to Stellar Expert
 
-### Add Contract Form
-The form allows users to:
-- Enter a contract ID (validated against Soroban address format)
-- Select the network (Mainnet, Testnet, Futurenet)
-- Configure alert rules (large transfers, function calls, admin actions, failed transactions)
-- Test webhook delivery before going live
+Contract metadata, configured alert rules with type badges, and webhook delivery history with transaction links to Stellar Expert.
+
+![Contract detail](./docs/images/contract-detail.png)
 
 ## Bug Reports & Feature Requests
 
