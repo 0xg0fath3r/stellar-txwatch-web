@@ -54,3 +54,4 @@ All types live in `types/index.ts` and must stay in sync with the Rust structs i
 - Keep PRs focused - one feature or fix per PR
 - All pages must be mobile responsive and dark-mode compatible
 - Run `npm run build` before opening a PR - zero lint errors required
+- If you add, move or remove a file, update the [Project structure](./README.md#project-structure) section of the README

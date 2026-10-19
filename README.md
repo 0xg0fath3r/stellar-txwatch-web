@@ -46,31 +46,65 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Project structure
 
 ```
+.github/
+  workflows/ci.yml            # Lint, type-check and build on every push/PR to main
 app/
-  page.tsx                  # Landing page
-  dashboard/page.tsx        # Stats + contract grid
+  layout.tsx                  # Root layout: nav, wallet status, global styles
+  page.tsx                    # Landing page
+  not-found.tsx               # 404 page
+  globals.css                 # Tailwind base styles
+  dashboard/
+    page.tsx                  # Stats + contract grid
+    loading.tsx               # Dashboard loading skeleton
   contracts/
-    page.tsx                # Contract list
-    new/page.tsx            # Add contract form
-    [id]/page.tsx           # Contract detail + alert history
+    page.tsx                  # Contract list with search and pagination
+    loading.tsx               # Contract list loading skeleton
+    new/page.tsx              # Add contract form + webhook test
+    [id]/page.tsx             # Contract detail + alert history
 components/
-  ContractCard.tsx          # Contract summary card
-  RuleBuilder.tsx           # Alert rule configuration UI
-  WebhookLog.tsx            # Webhook delivery history table
-  NetworkBadge.tsx          # Mainnet/Testnet/Futurenet badge
-  AlertRuleBadge.tsx        # Rule type display badge
-  FreighterConnect.tsx      # Wallet connection button
-  CopyButton.tsx            # Clipboard copy utility
-  MobileNav.tsx             # Mobile navigation drawer
-  EmptyState.tsx            # Empty list placeholder
+  AlertRuleBadge.tsx          # Rule type display badge
+  ContractCard.tsx            # Contract summary card
+  CopyButton.tsx              # Clipboard copy button
+  EmptyState.tsx              # Empty list placeholder
+  FreighterConnect.tsx        # Wallet connection button
+  MetadataSection.tsx         # Labelled metadata tile on the detail page
+  MobileNav.tsx               # Mobile navigation drawer
+  NetworkBadge.tsx            # Mainnet/Testnet/Futurenet badge
+  NetworkEditField.tsx        # Inline network selector with save/cancel
+  RuleBuilder.tsx             # Alert rule configuration UI
+  SortToggle.tsx              # Asc/desc sort direction toggle
+  Toast.tsx                   # Auto-dismissing success/error notification
+  WalletStatusBadge.tsx       # Freighter connected/disconnected indicator
+  WebhookLog.tsx              # Webhook delivery history table
+  WebhookLogCard.tsx          # Single webhook delivery entry card
+docs/
+  FREIGHTER_INTEGRATION.md    # Freighter wallet integration guide
+  MOCK_API_STRATEGY.md        # Mock vs. real API mode strategy
+  images/                     # README screenshots and demo GIF
+hooks/
+  useSortedLog.ts             # Sort log entries by timestamp with a toggle
 lib/
-  stellar.ts                # Horizon + Soroban RPC helpers
-  storage.ts                # localStorage contract registry
-  api.ts                    # Fetch wrapper + test webhook
-  useContracts.ts           # React hook for contract state
+  api.ts                      # Fetch wrapper + test webhook
+  contractSort.ts             # Deterministic contract ordering (network, label, id)
+  exportStorage.ts            # Export/import contracts as a JSON snapshot
+  format.ts                   # Date and rule summary formatters
+  formatAmount.ts             # Asset amount formatting (XLM, USDC, stroops)
+  stellar.ts                  # Horizon/Soroban URLs, validation, explorer links
+  storage.ts                  # localStorage contract and alert registry
+  storageLogger.ts            # Safe JSON parsing with storage error hooks
+  useAlerts.ts                # React hook for a contract's alert history
+  useAnalytics.ts             # No-op analytics hook (trackEvent stub)
+  useContracts.ts             # React hook for contract state
+  useFreighter.ts             # Freighter connection state + actions
+  useFreighterConnection.ts   # Freighter connection check with loading state
+  useWallet.ts                # Minimal connected wallet public key hook
+  __tests__/                  # Unit tests for lib modules
 types/
-  index.ts                  # Shared types (mirrors core Rust structs)
+  index.ts                    # Shared types (mirrors core Rust structs)
+__tests__/                    # Component, page and integration tests (Vitest)
 ```
+
+> Keep this tree in sync when adding, moving or removing files — the PR checklist asks you to confirm it.
 
 ## Architecture overview
 
