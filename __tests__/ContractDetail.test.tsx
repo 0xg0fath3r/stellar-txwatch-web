@@ -1,4 +1,8 @@
-import { formatRuleSummary } from '@/lib/format'
+import {
+  formatContractMetadata,
+  formatRuleSummary,
+  mapContractEvents,
+} from '@/lib/format'
 import { AlertRule } from '@/types'
 
 describe('formatRuleSummary', () => {
@@ -38,6 +42,58 @@ describe('formatRuleSummary', () => {
   it('handles AdminFunctionCalled with empty function_names', () => {
     const rule: AlertRule = { type: 'AdminFunctionCalled', function_names: [] }
     expect(formatRuleSummary(rule)).toBe('admin functions')
+  })
+})
+
+describe('formatContractMetadata', () => {
+  const hash =
+    'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
+
+  it('returns "Stellar Asset Contract" when isSac is true', () => {
+    expect(
+      formatContractMetadata({ isSac: true, wasmHash: hash, lastModifiedLedger: 42 })
+    ).toBe('Stellar Asset Contract')
+  })
+
+  it('returns a truncated hash for non-SAC contracts', () => {
+    const result = formatContractMetadata({
+      isSac: false,
+      wasmHash: hash,
+      lastModifiedLedger: 42,
+    })
+    expect(result).not.toBe('Stellar Asset Contract')
+    expect(result).toContain('abcdef01')
+    expect(result.length).toBeLessThan(hash.length)
+  })
+
+  it('returns an empty string when no hash is available', () => {
+    expect(
+      formatContractMetadata({ isSac: false, wasmHash: null, lastModifiedLedger: null })
+    ).toBe('')
+  })
+})
+
+describe('mapContractEvents', () => {
+  const rawEvent = {
+    type: 'contract',
+    ledger: 1234,
+    txHash: 'deadbeef',
+    topic: ['AAAADwAAAAh0cmFuc2Zlcg=='],
+    value: 'AAAADwAAAAA=',
+  }
+
+  it('returns an empty array for empty input', () => {
+    expect(mapContractEvents([])).toEqual([])
+  })
+
+  it('maps raw getEvents results into display rows', () => {
+    const rows = mapContractEvents([rawEvent])
+    expect(rows).toHaveLength(1)
+    expect(rows[0].type).toBe('contract')
+    expect(rows[0].ledger).toBe(1234)
+    expect(rows[0].txHash).toBe('deadbeef')
+    expect(Array.isArray(rows[0].topics)).toBe(true)
+    expect(rows[0].topics.length).toBeGreaterThan(0)
   })
 })
 

@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { WatchedContract, AlertPayload, AlertRule } from '@/types'
 import { getContract, deleteContract, getAlerts, saveContract } from '@/lib/storage'
-import { truncateId, explorerContractUrl, isValidUrl } from '@/lib/stellar'
+import { truncateId, explorerContractUrl, explorerTxUrl, isValidUrl } from '@/lib/stellar'
 import { formatDate, formatRuleSummary } from '@/lib/format'
 import { useAnalytics } from '@/lib/useAnalytics'
+import { fetchContractMetadata, ContractMetadata } from '@/lib/soroban'
+import { fetchContractEvents, ContractEvent } from '@/lib/events'
 import NetworkBadge from '@/components/NetworkBadge'
 import AlertRuleBadge from '@/components/AlertRuleBadge'
 import WebhookLog from '@/components/WebhookLog'
@@ -33,6 +35,16 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   const [editedWebhookUrl, setEditedWebhookUrl] = useState('')
   const [metadataError, setMetadataError] = useState<string | null>(null)
 
+  // On-chain metadata state
+  const [chainMetadata, setChainMetadata] = useState<ContractMetadata | null>(null)
+  const [chainMetadataLoading, setChainMetadataLoading] = useState(true)
+  const [chainMetadataError, setChainMetadataError] = useState(false)
+
+  // Recent events state
+  const [events, setEvents] = useState<ContractEvent[]>([])
+  const [eventsLoading, setEventsLoading] = useState(true)
+  const [eventsError, setEventsError] = useState(false)
+
   useEffect(() => {
     const c = getContract(params.id)
     if (!c) { 
@@ -44,6 +56,59 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
     setAlerts(getAlerts(params.id))
     setMounted(true)
   }, [params.id, router])
+
+  useEffect(() => {
+    if (!contract) return
+    let cancelled = false
+    setChainMetadataLoading(true)
+    setChainMetadataError(false)
+    fetchContractMetadata(contract.network, contract.contract_id)
+      .then((meta) => {
+        if (cancelled) return
+        setChainMetadata(meta)
+        setChainMetadataLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setChainMetadataError(true)
+        setChainMetadataLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [contract?.network, contract?.contract_id])
+
+  useEffect(() => {
+    if (!contract) return
+    let cancelled = false
+    setEventsLoading(true)
+    setEventsError(false)
+    fetchContractEvents(contract.network, contract.contract_id)
+      .then((evts) => {
+        if (cancelled) return
+        setEvents(evts)
+        setEventsLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setEventsError(true)
+        setEventsLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [contract?.network, contract?.contract_id])
+
+  function refreshEvents() {
+    if (!contract) return
+    setEventsLoading(true)
+    setEventsError(false)
+    fetchContractEvents(contract.network, contract.contract_id)
+      .then((evts) => {
+        setEvents(evts)
+        setEventsLoading(false)
+      })
+      .catch(() => {
+        setEventsError(true)
+        setEventsLoading(false)
+      })
+  }
 
   function handleDelete() {
     deleteContract(params.id)
@@ -249,6 +314,39 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
             </>
           )}
         </div>
+        {!chainMetadataError && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+            <p className="text-xs text-zinc-500 mb-1">WASM Hash</p>
+            {chainMetadataLoading ? (
+              <div className="h-4 w-32 bg-zinc-800 rounded animate-pulse" />
+            ) : chainMetadata?.isSac ? (
+              <p className="text-sm text-zinc-300">Stellar Asset Contract</p>
+            ) : chainMetadata?.wasmHash ? (
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-mono text-zinc-300 break-all">
+                  {truncateId(chainMetadata.wasmHash, 8)}
+                </span>
+                <CopyButton text={chainMetadata.wasmHash} />
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-500">Unavailable</p>
+            )}
+          </div>
+        )}
+        {!chainMetadataError && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+            <p className="text-xs text-zinc-500 mb-1">Last Modified Ledger</p>
+            {chainMetadataLoading ? (
+              <div className="h-4 w-20 bg-zinc-800 rounded animate-pulse" />
+            ) : chainMetadata?.lastModifiedLedger != null ? (
+              <p className="text-sm text-zinc-300 font-mono">
+                {chainMetadata.lastModifiedLedger.toLocaleString()}
+              </p>
+            ) : (
+              <p className="text-sm text-zinc-500">Unavailable</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Active Rules */}
@@ -275,6 +373,77 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
         <h2 className="text-lg font-semibold text-zinc-100 mb-3">Alert History</h2>
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
           <WebhookLog alerts={alerts} network={contract.network} />
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold text-zinc-100">Recent activity</h2>
+          <button
+            onClick={refreshEvents}
+            disabled={eventsLoading}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg
+              className={`w-4 h-4 ${eventsLoading ? 'animate-spin' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </button>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+          {eventsLoading ? (
+            <div className="space-y-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="h-10 bg-zinc-800 rounded animate-pulse" />
+              ))}
+            </div>
+          ) : eventsError ? (
+            <div className="text-center space-y-3 py-4">
+              <p className="text-sm text-zinc-400">Failed to load recent events.</p>
+              <button
+                onClick={refreshEvents}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          ) : events.length === 0 ? (
+            <p className="text-sm text-zinc-500">No recent events</p>
+          ) : (
+            <ul className="divide-y divide-zinc-800">
+              {events.slice(0, 20).map((event, i) => (
+                <li key={`${event.txHash}-${i}`} className="py-3 space-y-1">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-zinc-200">{event.type}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-mono text-zinc-500">
+                        Ledger {event.ledger.toLocaleString()}
+                      </span>
+                      <a
+                        href={explorerTxUrl(contract.network, event.txHash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                      >
+                        View tx
+                      </a>
+                    </div>
+                  </div>
+                  {event.topics.length > 0 && (
+                    <p className="text-xs font-mono text-zinc-400 break-all">
+                      {event.topics.map((t) => JSON.stringify(t)).join(' · ')}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 

@@ -36,3 +36,26 @@ export interface AlertPayload {
   timestamp: number
   horizon_link: string
 }
+
+export interface ContractExistenceResult {
+  exists: boolean
+  error?: string
+}
+
+export interface ContractMetadata {
+  wasmHash: string | null
+  lastModifiedLedger: number
+  isSac: boolean
+}
+
+export interface ContractEvent {
+  id: string
+  type: string
+  topics: unknown[]
+  value: unknown
+  ledger: number
+  txHash: string
+  closedAt: string
+}
+
+export type ContractExistenceMap = Record<string, boolean | 'unknown'>

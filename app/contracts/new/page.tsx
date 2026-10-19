@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { AlertRule, Network, WatchedContract } from '@/types'
 import { isValidContractId, isValidUrl } from '@/lib/stellar'
 import { saveContract, getContracts } from '@/lib/storage'
-import { sendTestWebhook } from '@/lib/api'
+import { sendTestWebhook, checkContractExists } from '@/lib/api'
 import { useFreighterConnection } from '@/lib/useFreighterConnection'
 import RuleBuilder from '@/components/RuleBuilder'
 import FreighterConnect from '@/components/FreighterConnect'
@@ -34,9 +34,29 @@ export default function NewContractPage() {
   const [testError, setTestError] = useState<string | null>(null)
   const [testStatusCode, setTestStatusCode] = useState<number | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [contractCheck, setContractCheck] = useState<'idle' | 'checking' | 'found' | 'not_found' | 'error'>('idle')
   const testAbortRef = useRef<AbortController | null>(null)
+  const contractCheckSeqRef = useRef(0)
 
   useEffect(() => () => testAbortRef.current?.abort(), [])
+
+  async function runContractCheck(id: string, net: Network) {
+    const trimmed = id.trim()
+    if (!trimmed || !isValidContractId(trimmed)) {
+      setContractCheck('idle')
+      return
+    }
+    const seq = ++contractCheckSeqRef.current
+    setContractCheck('checking')
+    try {
+      const exists = await checkContractExists(net, trimmed)
+      if (seq !== contractCheckSeqRef.current) return
+      setContractCheck(exists ? 'found' : 'not_found')
+    } catch {
+      if (seq !== contractCheckSeqRef.current) return
+      setContractCheck('error')
+    }
+  }
 
   function handleWalletConnect() {
     setErrors((prev) => ({ ...prev, wallet: undefined }))
@@ -202,10 +222,22 @@ export default function NewContractPage() {
             type="text"
             placeholder="CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
             value={contractId}
-            onChange={(e) => { setContractId(e.target.value); setErrors((prev) => ({ ...prev, contract_id: undefined })) }}
+            onChange={(e) => { setContractId(e.target.value); setErrors((prev) => ({ ...prev, contract_id: undefined })); setContractCheck('idle') }}
+            onBlur={(e) => runContractCheck(e.target.value, network)}
             className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
           />
           <p className="mt-1.5 text-xs text-zinc-400">Soroban contract addresses start with <span className="font-mono">C</span> and are 56 characters long</p>
+          {contractCheck === 'checking' && (
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-400">
+              <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" aria-hidden="true" />
+              Checking…
+            </p>
+          )}
+          {contractCheck === 'found' && <p className="mt-1 text-xs text-emerald-400">Contract found</p>}
+          {contractCheck === 'not_found' && (
+            <p className="mt-1 text-xs text-amber-400">Not found on {network.charAt(0).toUpperCase() + network.slice(1)} — you can still save</p>
+          )}
+          {contractCheck === 'error' && <p className="mt-1 text-xs text-zinc-500">Could not verify (RPC unavailable)</p>}
           {errors.contract_id && <p className="mt-1 text-xs text-red-400">{errors.contract_id}</p>}
         </div>
 
@@ -218,6 +250,11 @@ export default function NewContractPage() {
               const newNetwork = e.target.value as Network
               setNetwork(newNetwork)
               checkNetworkMismatch(newNetwork)
+              if (contractId.trim() && isValidContractId(contractId.trim())) {
+                runContractCheck(contractId, newNetwork)
+              } else {
+                setContractCheck('idle')
+              }
             }}
             className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
           >
