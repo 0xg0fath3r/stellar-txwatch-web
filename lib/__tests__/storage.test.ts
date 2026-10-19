@@ -21,6 +21,14 @@ Object.defineProperty(global, 'localStorage', { value: localStorageMock });
 
 const contract1 = { id: 'c1', address: 'GABC...001', label: 'Contract Alpha', network: 'mainnet' };
 const contract2 = { id: 'c2', address: 'GDEF...002', label: 'Contract Beta',  network: 'testnet' };
+const contractWithNotes = {
+  id: 'c3',
+  address: 'GHIJ...003',
+  label: 'Contract Gamma',
+  network: 'mainnet',
+  notes: 'Owner: Alice\nRunbook: https://example.com/runbook\nAudit: SOC2',
+};
+=======
 
 const alert1 = { id: 'a1', contractId: 'c1', type: 'transfer', threshold: 100 };
 const alert2 = { id: 'a2', contractId: 'c1', type: 'invocation', threshold: 0 };
@@ -44,6 +52,48 @@ describe('saveContract / getContracts', () => {
 
   it('returns empty array when no contracts saved (empty fallback)', () => {
     expect(getContracts()).toEqual([]);
+  });
+});
+
+describe('contract notes', () => {
+  it('saves and retrieves a contract with notes', () => {
+    saveContract(contractWithNotes);
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(1);
+    expect(contracts[0].notes).toBe(contractWithNotes.notes);
+  });
+
+  it('preserves line breaks in notes', () => {
+    saveContract(contractWithNotes);
+    expect(getContracts()[0].notes).toContain('\n');
+  });
+
+  it('saves a contract without notes (optional field)', () => {
+    saveContract(contract1);
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(1);
+    expect(contracts[0].notes).toBeUndefined();
+  });
+
+  it('updates notes when saving a duplicate id', () => {
+    saveContract(contract1);
+    saveContract({ ...contract1, notes: 'Updated notes' });
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(1);
+    expect(contracts[0].notes).toBe('Updated notes');
+  });
+
+  it('accepts notes of exactly 1000 characters', () => {
+    const notes = 'a'.repeat(1000);
+    saveContract({ ...contract1, notes });
+    expect(getContracts()[0].notes).toBe(notes);
+  });
+
+  it('rejects or truncates notes longer than 1000 characters', () => {
+    const notes = 'a'.repeat(1001);
+    saveContract({ ...contract1, notes });
+    const stored = getContracts()[0].notes;
+    expect(stored === undefined || stored.length <= 1000).toBe(true);
   });
 });
 

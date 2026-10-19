@@ -23,6 +23,22 @@ function load<T>(key: string): T[] {
 const STORAGE_QUOTA_BYTES = 5 * 1024 * 1024 // 5MB typical limit
 const MAX_ALERTS_PER_CONTRACT = 500
 const ALERTS_RETENTION_DAYS = 90
+export const MAX_NOTES_LENGTH = 1000
+
+export function isValidNotes(notes: unknown): notes is string {
+  return typeof notes === 'string' && notes.length <= MAX_NOTES_LENGTH
+}
+
+function normalizeContract(contract: WatchedContract): WatchedContract {
+  if (contract.notes === undefined || contract.notes === null) {
+    return contract
+  }
+  if (!isValidNotes(contract.notes)) {
+    const { notes: _notes, ...rest } = contract
+    return rest as WatchedContract
+  }
+  return contract
+}
 
 function getStorageSize(): number {
   const storage = getStorage()
@@ -110,7 +126,7 @@ export function migrateStorage(migrations: Record<number, () => void>) {
 }
 
 export function getContracts(): WatchedContract[] {
-  return load<WatchedContract>(CONTRACTS_KEY)
+  return load<WatchedContract>(CONTRACTS_KEY).map(normalizeContract)
 }
 
 export function getContract(id: string): WatchedContract | undefined {
@@ -133,7 +149,8 @@ export function getContractByIdAndNetwork(
 
 export function saveContract(contract: WatchedContract) {
   const contracts = getContracts().filter((c) => c.id !== contract.id)
-  const updated = { ...contract, updated_at: Date.now() }
+  const normalized = normalizeContract(contract)
+  const updated = { ...normalized, updated_at: Date.now() }
   save(CONTRACTS_KEY, [...contracts, updated])
 }
 

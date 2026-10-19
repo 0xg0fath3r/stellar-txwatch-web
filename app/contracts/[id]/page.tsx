@@ -31,7 +31,9 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   const [showEditMetadata, setShowEditMetadata] = useState(false)
   const [editedLabel, setEditedLabel] = useState('')
   const [editedWebhookUrl, setEditedWebhookUrl] = useState('')
+  const [editedNotes, setEditedNotes] = useState('')
   const [metadataError, setMetadataError] = useState<string | null>(null)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
 
   useEffect(() => {
     const c = getContract(params.id)
@@ -87,6 +89,7 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   function openEditMetadata() {
     setEditedLabel(contract!.label)
     setEditedWebhookUrl(contract!.webhook_url)
+    setEditedNotes(contract!.notes ?? '')
     setMetadataError(null)
     setShowEditMetadata(true)
     trackEvent('metadata_edit_opened', { contractId: params.id })
@@ -117,11 +120,17 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
       return
     }
 
+    if (editedNotes.length > 1000) {
+      setMetadataError('Notes must be 1000 characters or less')
+      return
+    }
+
     // Save changes
     const updated = { 
       ...contract!, 
       label: trimmedLabel,
-      webhook_url: trimmedWebhookUrl
+      webhook_url: trimmedWebhookUrl,
+      notes: editedNotes.trim() || undefined
     }
     saveContract(updated)
     setContract(updated)
@@ -130,7 +139,11 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   }
 
   function hasMetadataChanges(): boolean {
-    return editedLabel !== contract?.label || editedWebhookUrl !== contract?.webhook_url
+    return (
+      editedLabel !== contract?.label ||
+      editedWebhookUrl !== contract?.webhook_url ||
+      editedNotes !== (contract?.notes ?? '')
+    )
   }
 
   function handleCancelMetadataEdit() {
@@ -174,8 +187,26 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
 
   if (!contract) return null
 
+  const isMainnet = contract.network === 'mainnet'
+  const canDelete = !isMainnet || deleteConfirmText === contract.label
+
   return (
     <div className="space-y-8 max-w-4xl">
+      {/* Breadcrumbs */}
+      <nav aria-label="Breadcrumb">
+        <ol className="flex items-center gap-2 text-sm text-zinc-500">
+          <li>
+            <a href="/contracts" className="hover:text-zinc-300 transition-colors">
+              Contracts
+            </a>
+          </li>
+          <li aria-hidden="true" className="text-zinc-600">/</li>
+          <li aria-current="page" className="text-zinc-300 truncate">
+            {contract.label}
+          </li>
+        </ol>
+      </nav>
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div className="space-y-1 min-w-0">
@@ -209,7 +240,7 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
             Edit Rules
           </button>
           <button
-            onClick={() => setShowDelete(true)}
+            onClick={() => { setDeleteConfirmText(''); setShowDelete(true) }}
             className="px-3 py-1.5 rounded-lg border border-red-800 hover:border-red-600 text-sm text-red-400 hover:text-red-300 transition-colors"
           >
             Delete
@@ -250,6 +281,16 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
           )}
         </div>
       </div>
+
+      {/* Notes */}
+      {contract.notes && (
+        <div>
+          <h2 className="text-lg font-semibold text-zinc-100 mb-3">Notes</h2>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+            <p className="text-sm text-zinc-300 whitespace-pre-wrap break-words">{contract.notes}</p>
+          </div>
+        </div>
+      )}
 
       {/* Active Rules */}
       <div>
@@ -321,6 +362,25 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
                   Must be a valid HTTP or HTTPS URL
                 </p>
               </div>
+
+              {/* Notes field */}
+              <div>
+                <label htmlFor="edit-notes" className="block text-sm font-medium text-zinc-300 mb-2">
+                  Notes <span className="text-zinc-500 font-normal">(optional)</span>
+                </label>
+                <textarea
+                  id="edit-notes"
+                  value={editedNotes}
+                  onChange={(e) => setEditedNotes(e.target.value)}
+                  placeholder="Owner, runbook links, applicable audit..."
+                  maxLength={1000}
+                  rows={4}
+                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y"
+                />
+                <p className="text-xs text-zinc-500 mt-1">
+                  {editedNotes.length}/1000 characters
+                </p>
+              </div>
             </div>
 
             {metadataError && (
@@ -364,15 +424,32 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
                 <li>All {alerts.length} alert {alerts.length === 1 ? 'record' : 'records'}</li>
               </ul>
             </div>
+            {isMainnet && (
+              <div>
+                <label htmlFor="delete-confirm" className="block text-sm font-medium text-zinc-300 mb-2">
+                  Type <span className="text-zinc-100 font-mono">{contract.label}</span> to confirm
+                </label>
+                <input
+                  id="delete-confirm"
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder={contract.label}
+                  autoComplete="off"
+                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
+              </div>
+            )}
             <div className="flex gap-3">
               <button
                 onClick={handleDelete}
-                className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-sm font-medium text-white transition-colors"
+                disabled={!canDelete}
+                className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-600"
               >
                 Delete
               </button>
               <button
-                onClick={() => setShowDelete(false)}
+                onClick={() => { setShowDelete(false); setDeleteConfirmText('') }}
                 className="flex-1 px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
               >
                 Cancel

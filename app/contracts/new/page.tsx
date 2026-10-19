@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { AlertRule, Network, WatchedContract } from '@/types'
 import { isValidContractId, isValidUrl } from '@/lib/stellar'
 import { saveContract, getContracts } from '@/lib/storage'
@@ -9,6 +10,16 @@ import { sendTestWebhook } from '@/lib/api'
 import { useFreighterConnection } from '@/lib/useFreighterConnection'
 import RuleBuilder from '@/components/RuleBuilder'
 import FreighterConnect from '@/components/FreighterConnect'
+
+const DRAFT_STORAGE_KEY = 'txwatch_new_contract_draft'
+
+interface ContractDraft {
+  label: string
+  contractId: string
+  network: Network
+  webhookUrl: string
+  rules: AlertRule[]
+}
 
 interface FormErrors {
   label?: string
@@ -34,9 +45,76 @@ export default function NewContractPage() {
   const [testError, setTestError] = useState<string | null>(null)
   const [testStatusCode, setTestStatusCode] = useState<number | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [draftRestored, setDraftRestored] = useState(false)
   const testAbortRef = useRef<AbortController | null>(null)
+  const draftLoadedRef = useRef(false)
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => () => testAbortRef.current?.abort(), [])
+
+  // Restore draft on mount
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(DRAFT_STORAGE_KEY)
+      if (raw) {
+        const draft = JSON.parse(raw) as Partial<ContractDraft>
+        if (typeof draft.label === 'string') setLabel(draft.label)
+        if (typeof draft.contractId === 'string') setContractId(draft.contractId)
+        if (draft.network === 'testnet' || draft.network === 'mainnet' || draft.network === 'futurenet') {
+          setNetwork(draft.network)
+        }
+        if (typeof draft.webhookUrl === 'string') setWebhookUrl(draft.webhookUrl)
+        if (Array.isArray(draft.rules)) setRules(draft.rules)
+        setDraftRestored(true)
+      }
+    } catch {
+      // ignore storage/parse errors
+    }
+    draftLoadedRef.current = true
+  }, [])
+
+  // Debounced draft persistence (test results are intentionally excluded)
+  useEffect(() => {
+    if (!draftLoadedRef.current) return
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
+    draftTimerRef.current = setTimeout(() => {
+      try {
+        sessionStorage.setItem(
+          DRAFT_STORAGE_KEY,
+          JSON.stringify({ label, contractId, network, webhookUrl, rules })
+        )
+      } catch {
+        // ignore storage errors
+      }
+    }, 400)
+    return () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
+    }
+  }, [label, contractId, network, webhookUrl, rules])
+
+  function clearDraft() {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
+    try {
+      sessionStorage.removeItem(DRAFT_STORAGE_KEY)
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  function handleDiscardDraft() {
+    clearDraft()
+    setLabel('')
+    setContractId('')
+    setNetwork('testnet')
+    setWebhookUrl('')
+    setRules([])
+    setErrors({})
+    setTestStatus('idle')
+    setTestError(null)
+    setTestStatusCode(null)
+    setNetworkWarning(null)
+    setDraftRestored(false)
+  }
 
   function handleWalletConnect() {
     setErrors((prev) => ({ ...prev, wallet: undefined }))
@@ -122,6 +200,7 @@ export default function NewContractPage() {
       created_at: Date.now(),
     }
     saveContract(contract)
+    clearDraft()
     try {
       sessionStorage.setItem('txwatch_last_created_contract', contract.id)
     } catch {
@@ -170,10 +249,34 @@ export default function NewContractPage() {
     <>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <div className="max-w-2xl mx-auto space-y-8">
+      <nav aria-label="Breadcrumb">
+        <ol className="flex items-center gap-2 text-sm text-zinc-500">
+          <li>
+            <Link href="/contracts" className="hover:text-zinc-300 transition-colors">
+              Contracts
+            </Link>
+          </li>
+          <li aria-hidden="true" className="text-zinc-600">/</li>
+          <li aria-current="page" className="text-zinc-300">New</li>
+        </ol>
+      </nav>
       <div>
         <h1 className="text-2xl font-bold text-zinc-100">Add Contract</h1>
         <p className="text-sm text-zinc-500 mt-1">Register a Soroban contract to monitor</p>
       </div>
+
+      {draftRestored && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-4 py-3">
+          <p className="text-sm text-indigo-300">Draft restored</p>
+          <button
+            type="button"
+            onClick={handleDiscardDraft}
+            className="text-sm font-medium text-indigo-300 hover:text-indigo-200 underline underline-offset-2 transition-colors"
+          >
+            Discard
+          </button>
+        </div>
+      )}
 
       <div className="space-y-5">
         {/* Label */}
