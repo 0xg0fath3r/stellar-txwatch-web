@@ -131,3 +131,20 @@ Most changes flow from types → logic → components → pages. When adding a f
 2. Add logic to `lib/stellar.ts` or `lib/api.ts`
 3. Create/update components in `/components`
 4. Wire into pages in `/app`
+
+## Code Owners
+
+Review routing for the areas above is enforced by [`.github/CODEOWNERS`](./.github/CODEOWNERS). GitHub automatically requests reviews from the owners of every path a PR touches:
+
+| Area | Paths |
+|---|---|
+| Pages & routing | `app/` |
+| UI components | `components/`, `hooks/` |
+| Business logic | `lib/` |
+| Contract persistence | `lib/storage*`, `lib/exportStorage.ts` |
+| Stellar & backend integration | `lib/stellar.ts`, `lib/api.ts` |
+| Shared types | `types/` |
+| Repo setup | `.github/` |
+| Documentation | `*.md`, `docs/` |
+
+When you add a new directory or move ownership between areas, update this table and `CODEOWNERS` together.
