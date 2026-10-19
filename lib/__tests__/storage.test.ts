@@ -5,6 +5,9 @@ import {
   saveAlert,
   getAlerts,
   deleteAlert,
+  getSettings,
+  saveSettings,
+  normalizeAlert,
 } from '../storage';
 
 const localStorageMock = (() => {
@@ -107,5 +110,62 @@ describe('deleteAlert', () => {
     const alerts = getAlerts('c1');
     expect(alerts).toHaveLength(1);
     expect(alerts[0].id).toBe('a2');
+  });
+});
+
+describe('settings persistence', () => {
+  it('defaults the explorer to Stellar Expert when nothing is saved', () => {
+    expect(getSettings().explorer).toBe('stellar-expert');
+  });
+
+  it('saves and reloads a chosen explorer', () => {
+    saveSettings({ explorer: 'stellar-chain' });
+    expect(getSettings().explorer).toBe('stellar-chain');
+  });
+
+  it('falls back to Stellar Expert for an unknown explorer id', () => {
+    saveSettings({ explorer: 'not-a-real-explorer' });
+    expect(getSettings().explorer).toBe('stellar-expert');
+  });
+});
+
+describe('LargeTransfer threshold_xlm migration', () => {
+  it('normalizes a legacy threshold_xlm rule to the token threshold shape', () => {
+    const legacy = {
+      id: 'a4',
+      contractId: 'c1',
+      type: 'large_transfer',
+      threshold_xlm: 250,
+    };
+    const normalized = normalizeAlert(legacy);
+    expect(normalized.threshold).toBe(250);
+    expect(normalized.asset).toBeUndefined();
+    expect(normalized.threshold_xlm).toBeUndefined();
+  });
+
+  it('leaves token-denominated rules untouched', () => {
+    const tokenRule = {
+      id: 'a5',
+      contractId: 'c1',
+      type: 'large_transfer',
+      asset: 'CUSDC...SAC',
+      threshold: 1000,
+    };
+    const normalized = normalizeAlert(tokenRule);
+    expect(normalized.asset).toBe('CUSDC...SAC');
+    expect(normalized.threshold).toBe(1000);
+  });
+
+  it('migrates legacy rules when loading alerts from storage', () => {
+    localStorageMock.setItem(
+      'txwatch_alerts',
+      JSON.stringify([
+        { id: 'a6', contractId: 'c1', type: 'large_transfer', threshold_xlm: 42 },
+      ]),
+    );
+    const alerts = getAlerts('c1');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].threshold).toBe(42);
+    expect(alerts[0].threshold_xlm).toBeUndefined();
   });
 });

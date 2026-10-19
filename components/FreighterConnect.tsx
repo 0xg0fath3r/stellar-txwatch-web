@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { Networks } from '@stellar/stellar-sdk'
 
 declare global {
   interface Window {
     freighter?: {
       isConnected: () => Promise<boolean>
       getPublicKey: () => Promise<string>
-      getNetwork: () => Promise<string>
+      getNetworkDetails: () => Promise<{ networkPassphrase: string }>
     }
     __freighterPublicKey?: string | null
   }
@@ -66,10 +67,16 @@ export default function FreighterConnect({ onConnect, className = '' }: Freighte
       }
 
       const key = await window.freighter.getPublicKey()
-      const network = await window.freighter.getNetwork()
+      const { networkPassphrase } = await window.freighter.getNetworkDetails()
 
-      if (!key || !network) {
+      if (!key || !networkPassphrase) {
         setError('Failed to retrieve wallet information')
+        return
+      }
+
+      const knownPassphrases = [Networks.PUBLIC, Networks.TESTNET, Networks.FUTURENET]
+      if (!knownPassphrases.includes(networkPassphrase)) {
+        setError('Wallet is on a custom network')
         return
       }
 

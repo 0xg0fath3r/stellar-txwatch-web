@@ -7,9 +7,17 @@ export type AlertRuleType =
   | 'FunctionCalled'
   | 'TransactionFailed'
 
+export type ExplorerId = 'stellar-expert' | 'stellarchain' | 'horizon'
+
+export interface AppSettings {
+  explorer: ExplorerId
+}
+
 export interface AlertRule {
   type: AlertRuleType
   threshold_xlm?: number
+  asset?: string
+  threshold?: number
   function_names?: string[]
   function_name?: string
 }
@@ -23,6 +31,7 @@ export interface WatchedContract {
   webhook_url: string
   created_at: number
   updated_at: number
+  instanceLiveUntilLedgerSeq?: number
 }
 
 export interface AlertPayload {

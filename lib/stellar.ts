@@ -14,14 +14,82 @@ export const SOROBAN_RPC_URLS: Record<Network, string> = {
 
 export const STELLAR_EXPERT_BASE = 'https://stellar.expert/explorer'
 
-export function explorerTxUrl(network: Network, txHash: string): string {
-  const net = network === 'mainnet' ? 'public' : network
-  return `${STELLAR_EXPERT_BASE}/${net}/tx/${txHash}`
+export type ExplorerId = 'stellar-expert' | 'stellar-chain' | 'horizon'
+
+export interface ExplorerMeta {
+  id: ExplorerId
+  name: string
+  description: string
 }
 
-export function explorerContractUrl(network: Network, contractId: string): string {
-  const net = network === 'mainnet' ? 'public' : network
-  return `${STELLAR_EXPERT_BASE}/${net}/contract/${contractId}`
+export const EXPLORERS: ExplorerMeta[] = [
+  {
+    id: 'stellar-expert',
+    name: 'Stellar Expert',
+    description: 'Rich explorer with contract and transaction details.',
+  },
+  {
+    id: 'stellar-chain',
+    name: 'StellarChain',
+    description: 'Alternative block explorer for the Stellar network.',
+  },
+  {
+    id: 'horizon',
+    name: 'Horizon (raw JSON)',
+    description: 'View the raw Horizon API response for the transaction.',
+  },
+]
+
+export const DEFAULT_EXPLORER: ExplorerId = 'stellar-expert'
+
+export function isExplorerId(value: unknown): value is ExplorerId {
+  return (
+    value === 'stellar-expert' ||
+    value === 'stellar-chain' ||
+    value === 'horizon'
+  )
+}
+
+function stellarExpertNet(network: Network): string {
+  return network === 'mainnet' ? 'public' : network
+}
+
+function stellarChainNet(network: Network): string {
+  return network === 'mainnet' ? 'public' : network
+}
+
+export function explorerTxUrl(
+  network: Network,
+  txHash: string,
+  explorer: ExplorerId = DEFAULT_EXPLORER,
+): string {
+  switch (explorer) {
+    case 'stellar-chain':
+      return `https://stellarchain.io/${stellarChainNet(network)}/tx/${txHash}`
+    case 'horizon':
+      return `${HORIZON_URLS[network]}/transactions/${txHash}`
+    case 'stellar-expert':
+    default:
+      return `${STELLAR_EXPERT_BASE}/${stellarExpertNet(network)}/tx/${txHash}`
+  }
+}
+
+export function explorerContractUrl(
+  network: Network,
+  contractId: string,
+  explorer: ExplorerId = DEFAULT_EXPLORER,
+): string {
+  switch (explorer) {
+    case 'stellar-chain':
+      return `https://stellarchain.io/${stellarChainNet(network)}/contracts/${contractId}`
+    case 'horizon':
+      // Horizon does not expose contracts directly; fall back to the account
+      // endpoint which returns the raw JSON for the contract's account.
+      return `${HORIZON_URLS[network]}/accounts/${contractId}`
+    case 'stellar-expert':
+    default:
+      return `${STELLAR_EXPERT_BASE}/${stellarExpertNet(network)}/contract/${contractId}`
+  }
 }
 
 export function truncateId(id: string, chars = 8): string {

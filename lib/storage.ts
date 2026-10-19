@@ -1,9 +1,10 @@
-import { WatchedContract, AlertPayload, Network } from '@/types'
+import { WatchedContract, AlertPayload, Network, AppSettings, DEFAULT_SETTINGS } from '@/types'
 
 const CONTRACTS_KEY = 'txwatch_contracts'
 const ALERTS_KEY = 'txwatch_alerts'
+const SETTINGS_KEY = 'txwatch_settings'
 const STORAGE_VERSION_KEY = 'txwatch_storage_version'
-const CURRENT_STORAGE_VERSION = 1
+const CURRENT_STORAGE_VERSION = 2
 
 function getStorage(): Storage | undefined {
   if (typeof window !== 'undefined') return window.localStorage
@@ -107,6 +108,92 @@ export function migrateStorage(migrations: Record<number, () => void>) {
     }
   }
   setStorageVersion(CURRENT_STORAGE_VERSION)
+}
+
+/**
+ * Migration to v2:
+ * - Normalizes LargeTransfer rules that only have `threshold_xlm` into the
+ *   token-denominated shape (`asset` + `threshold`), while keeping
+ *   `threshold_xlm` for backwards compatibility.
+ * - Ensures settings exist with the default explorer preference.
+ */
+export function migrateToV2() {
+  const storage = getStorage()
+  if (!storage) return
+
+  const contracts = load<WatchedContract>(CONTRACTS_KEY)
+  let changed = false
+  const migrated = contracts.map((contract) => {
+    const rules = (contract as { rules?: unknown }).rules
+    if (!Array.isArray(rules)) return contract
+
+    let rulesChanged = false
+    const nextRules = rules.map((rule) => {
+      if (!rule || typeof rule !== 'object') return rule
+      const r = rule as Record<string, unknown>
+      if (r.type !== 'LargeTransfer') return rule
+
+      const hasThresholdXlm = typeof r.threshold_xlm === 'number'
+      const hasThreshold = typeof r.threshold === 'number'
+      const hasAsset = typeof r.asset === 'string' && r.asset.length > 0
+
+      if (!hasThresholdXlm || (hasThreshold && hasAsset)) return rule
+
+      rulesChanged = true
+      return {
+        ...r,
+        // Keep threshold_xlm for backwards compatibility.
+        threshold_xlm: hasThresholdXlm ? r.threshold_xlm : undefined,
+        // Default to native XLM when no asset was specified.
+        asset: hasAsset ? r.asset : 'native',
+        threshold: hasThreshold ? r.threshold : r.threshold_xlm,
+      }
+    })
+
+    if (!rulesChanged) return contract
+    changed = true
+    return { ...contract, rules: nextRules } as WatchedContract
+  })
+
+  if (changed) {
+    storage.setItem(CONTRACTS_KEY, JSON.stringify(migrated))
+  }
+
+  if (storage.getItem(SETTINGS_KEY) === null) {
+    storage.setItem(SETTINGS_KEY, JSON.stringify(DEFAULT_SETTINGS))
+  }
+}
+
+export function getSettings(): AppSettings {
+  const storage = getStorage()
+  if (!storage) return { ...DEFAULT_SETTINGS }
+  try {
+    const raw = storage.getItem(SETTINGS_KEY)
+    if (!raw) return { ...DEFAULT_SETTINGS }
+    const parsed = JSON.parse(raw) as Partial<AppSettings>
+    return { ...DEFAULT_SETTINGS, ...parsed }
+  } catch {
+    return { ...DEFAULT_SETTINGS }
+  }
+}
+
+export function saveSettings(settings: Partial<AppSettings>): AppSettings {
+  const storage = getStorage()
+  const merged = { ...getSettings(), ...settings }
+  if (storage) {
+    storage.setItem(SETTINGS_KEY, JSON.stringify(merged))
+  }
+  return merged
+}
+
+export function onSettingsChange(callback: () => void): () => void {
+  const handler = (e: StorageEvent) => {
+    if (e.key === SETTINGS_KEY) {
+      callback()
+    }
+  }
+  window.addEventListener('storage', handler)
+  return () => window.removeEventListener('storage', handler)
 }
 
 export function getContracts(): WatchedContract[] {

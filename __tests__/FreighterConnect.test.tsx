@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { Networks } from '@stellar/stellar-sdk'
 import FreighterConnect from '@/components/FreighterConnect'
 
 describe('FreighterConnect', () => {
@@ -162,6 +163,68 @@ describe('FreighterConnect', () => {
 
       await waitFor(() => {
         expect(onConnect).toHaveBeenCalledWith(mockPublicKey)
+      })
+    })
+  })
+
+  describe('network mismatch detection', () => {
+    const mockPublicKey = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+
+    const setupFreighter = (networkPassphrase: string) => {
+      ;(window as any).freighter = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        getPublicKey: jest.fn().mockResolvedValue(mockPublicKey),
+        getNetworkDetails: jest.fn().mockResolvedValue({
+          network: 'CUSTOM',
+          networkPassphrase,
+          networkUrl: 'https://example.com',
+        }),
+      }
+    }
+
+    it('does not warn when wallet is on the public network', async () => {
+      setupFreighter(Networks.PUBLIC)
+
+      render(<FreighterConnect />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Disconnect')).toBeInTheDocument()
+      })
+
+      expect(screen.queryByText(/Wallet is on/)).not.toBeInTheDocument()
+    })
+
+    it('does not warn when wallet is on the testnet network', async () => {
+      setupFreighter(Networks.TESTNET)
+
+      render(<FreighterConnect />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Disconnect')).toBeInTheDocument()
+      })
+
+      expect(screen.queryByText(/Wallet is on/)).not.toBeInTheDocument()
+    })
+
+    it('does not warn when wallet is on the futurenet network', async () => {
+      setupFreighter(Networks.FUTURENET)
+
+      render(<FreighterConnect />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Disconnect')).toBeInTheDocument()
+      })
+
+      expect(screen.queryByText(/Wallet is on/)).not.toBeInTheDocument()
+    })
+
+    it('shows custom network warning for an unknown passphrase', async () => {
+      setupFreighter('Custom Network ; 2024')
+
+      render(<FreighterConnect />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Wallet is on a custom network')).toBeInTheDocument()
       })
     })
   })

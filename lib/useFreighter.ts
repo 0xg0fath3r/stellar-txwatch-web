@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { Networks } from '@stellar/stellar-sdk'
 
 declare global {
   interface Window {
@@ -8,8 +9,24 @@ declare global {
       isConnected: () => Promise<boolean>
       getPublicKey: () => Promise<string>
       getNetwork: () => Promise<string>
+      getNetworkDetails: () => Promise<{ networkPassphrase: string }>
       signTransaction: (xdr: string, options: { networkPassphrase: string }) => Promise<string>
     }
+  }
+}
+
+export type KnownNetwork = 'PUBLIC' | 'TESTNET' | 'FUTURENET' | 'custom'
+
+export function getNetworkFromPassphrase(passphrase: string): KnownNetwork {
+  switch (passphrase) {
+    case Networks.PUBLIC:
+      return 'PUBLIC'
+    case Networks.TESTNET:
+      return 'TESTNET'
+    case Networks.FUTURENET:
+      return 'FUTURENET'
+    default:
+      return 'custom'
   }
 }
 

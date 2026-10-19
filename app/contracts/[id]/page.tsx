@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { WatchedContract, AlertPayload, AlertRule } from '@/types'
-import { getContract, deleteContract, getAlerts, saveContract } from '@/lib/storage'
-import { truncateId, explorerContractUrl, isValidUrl } from '@/lib/stellar'
+import { WatchedContract, AlertPayload, AlertRule, ExplorerId } from '@/types'
+import { getContract, deleteContract, getAlerts, saveContract, getSettings } from '@/lib/storage'
+import { truncateId, explorerContractUrl, isValidUrl, fetchContractInstance, estimateExpiryDate } from '@/lib/stellar'
 import { formatDate, formatRuleSummary } from '@/lib/format'
 import { useAnalytics } from '@/lib/useAnalytics'
 import NetworkBadge from '@/components/NetworkBadge'
@@ -33,6 +33,15 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   const [editedWebhookUrl, setEditedWebhookUrl] = useState('')
   const [metadataError, setMetadataError] = useState<string | null>(null)
 
+  // Explorer preference
+  const [explorer, setExplorer] = useState<ExplorerId>('stellar-expert')
+
+  // Contract instance TTL state
+  const [liveUntilLedgerSeq, setLiveUntilLedgerSeq] = useState<number | null>(null)
+  const [expiryDate, setExpiryDate] = useState<Date | null>(null)
+  const [ttlLoading, setTtlLoading] = useState(false)
+  const [ttlError, setTtlError] = useState<string | null>(null)
+
   useEffect(() => {
     const c = getContract(params.id)
     if (!c) { 
@@ -42,8 +51,41 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
     }
     setContract(c)
     setAlerts(getAlerts(params.id))
+    setExplorer(getSettings().explorer ?? 'stellar-expert')
     setMounted(true)
   }, [params.id, router])
+
+  useEffect(() => {
+    if (!contract) return
+    let cancelled = false
+    setTtlLoading(true)
+    setTtlError(null)
+    fetchContractInstance(contract.network, contract.contract_id)
+      .then((instance) => {
+        if (cancelled) return
+        if (!instance) {
+          setTtlError('Unable to load instance TTL')
+          return
+        }
+        setLiveUntilLedgerSeq(instance.liveUntilLedgerSeq)
+        setExpiryDate(estimateExpiryDate(instance.liveUntilLedgerSeq))
+      })
+      .catch(() => {
+        if (!cancelled) setTtlError('Unable to load instance TTL')
+      })
+      .finally(() => {
+        if (!cancelled) setTtlLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [contract])
+
+  const daysToExpiry = expiryDate
+    ? Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null
+  const expirySeverity: 'red' | 'amber' | null =
+    daysToExpiry === null ? null : daysToExpiry < 7 ? 'red' : daysToExpiry < 30 ? 'amber' : null
 
   function handleDelete() {
     deleteContract(params.id)
@@ -185,7 +227,7 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
           </div>
           <div className="flex items-center gap-2">
             <a
-              href={explorerContractUrl(contract.network, contract.contract_id)}
+              href={explorerContractUrl(contract.network, contract.contract_id, explorer)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm font-mono text-indigo-400 hover:text-indigo-300 transition-colors break-all"
@@ -251,6 +293,58 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
         </div>
       </div>
 
+      {/* Instance TTL / Expiry */}
+      <div>
+        <h2 className="text-lg font-semibold text-zinc-100 mb-3">Instance Expiry</h2>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-2">
+          {ttlLoading ? (
+            <p className="text-sm text-zinc-500">Loading instance TTL…</p>
+          ) : ttlError ? (
+            <p className="text-sm text-zinc-500">{ttlError}</p>
+          ) : liveUntilLedgerSeq === null ? (
+            <p className="text-sm text-zinc-500">No TTL information available.</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+                <div>
+                  <p className="text-xs text-zinc-500">Live Until Ledger</p>
+                  <p className="text-sm font-mono text-zinc-300">{liveUntilLedgerSeq.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-zinc-500">Estimated Expiry</p>
+                  <p className="text-sm text-zinc-300">
+                    {expiryDate ? expiryDate.toLocaleString() : 'Unknown'}
+                  </p>
+                </div>
+                {daysToExpiry !== null && (
+                  <div>
+                    <p className="text-xs text-zinc-500">Time Remaining</p>
+                    <p className="text-sm text-zinc-300">
+                      {daysToExpiry <= 0 ? 'Expired or expiring today' : `${daysToExpiry} day${daysToExpiry === 1 ? '' : 's'}`}
+                    </p>
+                  </div>
+                )}
+              </div>
+              {expirySeverity && (
+                <div
+                  className={
+                    expirySeverity === 'red'
+                      ? 'bg-red-900/20 border border-red-800 rounded-lg p-3'
+                      : 'bg-amber-900/20 border border-amber-800 rounded-lg p-3'
+                  }
+                >
+                  <p className={expirySeverity === 'red' ? 'text-xs text-red-400' : 'text-xs text-amber-400'}>
+                    {expirySeverity === 'red'
+                      ? 'This contract instance expires in under 7 days. Extend its TTL to avoid archival.'
+                      : 'This contract instance expires in under 30 days. Consider extending its TTL.'}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
       {/* Active Rules */}
       <div>
         <h2 className="text-lg font-semibold text-zinc-100 mb-3">Active Rules</h2>
@@ -274,7 +368,7 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
       <div>
         <h2 className="text-lg font-semibold text-zinc-100 mb-3">Alert History</h2>
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-          <WebhookLog alerts={alerts} network={contract.network} />
+          <WebhookLog alerts={alerts} network={contract.network} explorer={explorer} />
         </div>
       </div>
 
