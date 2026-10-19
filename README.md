@@ -259,6 +259,15 @@ Lint -> Type-check -> Build
 
 See [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
 
+### Bundle size
+
+Pull requests also run a **Bundle size** job that builds the app, comments the first-load JS diff against `main` on the PR, and fails if any route exceeds its budget in [`.size-limit.cjs`](./.size-limit.cjs).
+
+```bash
+npm run analyze   # ANALYZE=true next build — opens the bundle analyzer report
+npm run build && npm run size   # check budgets locally
+```
+
 ## Roadmap
 
 ### Near-term

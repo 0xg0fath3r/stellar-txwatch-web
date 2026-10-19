@@ -44,3 +44,31 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: ""
+
+  size:
+    name: Bundle size
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Builds this branch and the base branch, comments the size diff on the
+      # PR and fails the job when any .size-limit.cjs budget is exceeded
+      - name: Check bundle size budgets
+        uses: andresz1/size-limit-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          build_script: build
+        env:
+          NEXT_PUBLIC_API_URL: ""
