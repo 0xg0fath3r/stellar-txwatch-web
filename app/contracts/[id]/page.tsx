@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { WatchedContract, AlertPayload, AlertRule } from '@/types'
 import { getContract, deleteContract, getAlerts, saveContract } from '@/lib/storage'
 import { truncateId, explorerContractUrl, isValidUrl } from '@/lib/stellar'
-import { formatDate, formatRuleSummary } from '@/lib/format'
+import { formatDate, formatDateTime, formatRelativeTime, formatRuleSummary } from '@/lib/format'
 import { useAnalytics } from '@/lib/useAnalytics'
 import NetworkBadge from '@/components/NetworkBadge'
 import AlertRuleBadge from '@/components/AlertRuleBadge'
@@ -13,6 +13,7 @@ import WebhookLog from '@/components/WebhookLog'
 import RuleBuilder from '@/components/RuleBuilder'
 import CopyButton from '@/components/CopyButton'
 import MetadataSection from '@/components/MetadataSection'
+
 
 export default function ContractDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -32,6 +33,16 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   const [editedLabel, setEditedLabel] = useState('')
   const [editedWebhookUrl, setEditedWebhookUrl] = useState('')
   const [metadataError, setMetadataError] = useState<string | null>(null)
+  const [relativeCreatedAt, setRelativeCreatedAt] = useState<string>('')
+
+  useEffect(() => {
+    if (!contract?.created_at) return
+    const update = () => setRelativeCreatedAt(formatRelativeTime(contract.created_at))
+    update()
+    const interval = setInterval(update, 30000)
+    return () => clearInterval(interval)
+  }, [contract?.created_at])
+
 
   useEffect(() => {
     const c = getContract(params.id)
@@ -235,9 +246,15 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
         </div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
           <p className="text-xs text-zinc-500 mb-1">Registered</p>
-          <p className="text-sm text-zinc-300">{formatDate(contract.created_at)}</p>
-          <p className="text-xs text-zinc-500 mt-1">{new Date(contract.created_at).toLocaleTimeString()}</p>
+          <p
+            className="text-sm text-zinc-300 cursor-help"
+            title={`${formatDate(contract.created_at)} ${new Date(contract.created_at).toLocaleTimeString()}`}
+          >
+            {relativeCreatedAt || formatRelativeTime(contract.created_at)}
+          </p>
+          <p className="text-xs text-zinc-500 mt-1">{formatDate(contract.created_at)}</p>
         </div>
+
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
           <p className="text-xs text-zinc-500 mb-1">{alerts.length === 0 ? 'Total Alerts' : 'Last Alert'}</p>
           {alerts.length === 0 ? (
@@ -287,9 +304,12 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
             <div className="space-y-4">
               {/* Label field */}
               <div>
-                <label htmlFor="edit-label" className="block text-sm font-medium text-zinc-300 mb-2">
-                  Label
-                </label>
+                <div className="flex justify-between items-center mb-2">
+                  <label htmlFor="edit-label" className="block text-sm font-medium text-zinc-300">
+                    Label
+                  </label>
+                  <span className="text-xs text-zinc-500">{editedLabel.length}/100</span>
+                </div>
                 <input
                   id="edit-label"
                   type="text"
@@ -300,9 +320,10 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
                   className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 />
                 <p className="text-xs text-zinc-500 mt-1">
-                  {editedLabel.length}/100 characters
+                  {editedLabel.length}/100
                 </p>
               </div>
+
 
               {/* Webhook URL field */}
               <div>
