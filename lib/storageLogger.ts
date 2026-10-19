@@ -1,3 +1,5 @@
+import * as Sentry from '@sentry/nextjs';
+
 export type StorageErrorHandler = (context: StorageErrorContext) => void;
 
 export interface StorageErrorContext {
@@ -15,6 +17,26 @@ export function onStorageError(handler: StorageErrorHandler): void {
 
 export function clearStorageErrorHandlers(): void {
   errorHandlers.length = 0;
+}
+
+function forwardToSentry(ctx: StorageErrorContext): void {
+  try {
+    const client = Sentry.getClient();
+    if (!client) {
+      return;
+    }
+
+    Sentry.captureException(ctx.error, {
+      tags: { source: 'storageLogger' },
+      extra: {
+        key: ctx.key,
+        timestamp: ctx.timestamp,
+        rawValue: (ctx.rawValue ?? '').slice(0, 200),
+      },
+    });
+  } catch {
+    // Never let Sentry reporting crash the app
+  }
 }
 
 function emitStorageError(ctx: StorageErrorContext): void {
@@ -35,6 +57,8 @@ function emitStorageError(ctx: StorageErrorContext): void {
       (ctx.rawValue ?? '').slice(0, 200),
     );
   }
+
+  forwardToSentry(ctx);
 
   for (const handler of errorHandlers) {
     try {

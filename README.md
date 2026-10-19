@@ -105,6 +105,27 @@ See [Stellar integration](#stellar-integration) for implementation details.
 | Variable | Description |
 |---|---|
 | `NEXT_PUBLIC_API_URL` | Base URL of the txwatch-core API (optional) |
+| `NEXT_PUBLIC_HORIZON_URL` | Legacy Horizon override, applied to **testnet** only (optional) |
+| `NEXT_PUBLIC_HORIZON_URL_MAINNET` | Horizon override for Mainnet (optional) |
+| `NEXT_PUBLIC_HORIZON_URL_TESTNET` | Horizon override for Testnet (optional) |
+| `NEXT_PUBLIC_HORIZON_URL_FUTURENET` | Horizon override for Futurenet (optional) |
+| `NEXT_PUBLIC_SOROBAN_RPC_URL` | Legacy Soroban RPC override, applied to **testnet** only (optional) |
+| `NEXT_PUBLIC_SOROBAN_RPC_URL_MAINNET` | Soroban RPC override for Mainnet (optional) |
+| `NEXT_PUBLIC_SOROBAN_RPC_URL_TESTNET` | Soroban RPC override for Testnet (optional) |
+| `NEXT_PUBLIC_SOROBAN_RPC_URL_FUTURENET` | Soroban RPC override for Futurenet (optional) |
+| `NEXT_PUBLIC_SENTRY_DSN` | Sentry DSN. Error tracking is disabled unless this is set (optional) |
+| `SENTRY_AUTH_TOKEN` | Sentry auth token used to upload source maps in CI (optional, CI only) |
+
+### URL override precedence
+
+`lib/stellar.ts` resolves each network endpoint in this order:
+
+1. **Per-network override** — e.g. `NEXT_PUBLIC_SOROBAN_RPC_URL_MAINNET` or `NEXT_PUBLIC_HORIZON_URL_TESTNET`
+2. **Legacy single-variable override** — `NEXT_PUBLIC_SOROBAN_RPC_URL` / `NEXT_PUBLIC_HORIZON_URL`, applied to **testnet only** for backwards compatibility
+3. **Built-in default** — the hard-coded public endpoints
+
+Overrides are validated with `isValidUrl` at startup; invalid values are ignored (falling back to the next source) and logged in development.
+=======
 
 ## Stellar integration
 
@@ -123,8 +144,38 @@ HORIZON_URLS.testnet    // https://horizon-testnet.stellar.org
 HORIZON_URLS.futurenet  // https://horizon-futurenet.stellar.org
 
 // Soroban JSON-RPC - contract simulation, ledger entries
+SOROBAN_RPC_URLS.mainnet  // https://mainnet.stellar.validationcloud.io/v1/<key>
 SOROBAN_RPC_URLS.testnet  // https://soroban-testnet.stellar.org
 ```
+
+Each URL can be overridden per network with the environment variables listed in
+[Environment variables](#environment-variables) (see [URL override precedence](#url-override-precedence)).
+
+#### Default mainnet Soroban RPC provider
+
+The default mainnet Soroban RPC endpoint is **Validation Cloud**
+(`mainnet.stellar.validationcloud.io`). It is used because it is one of the
+publicly documented mainnet RPC providers in the
+[Stellar docs](https://developers.stellar.org/docs/data/apis/rpc/providers) and
+offers a free tier suitable for a dashboard that only performs occasional
+simulation and ledger-entry reads.
+
+Be aware that this is a **third-party service**: rate limits and terms of
+service are set by the provider and may change without notice. For production
+or high-volume use, or if you prefer to self-host, point
+`NEXT_PUBLIC_SOROBAN_RPC_URL_MAINNET` at your own RPC endpoint.
+
+Alternative public mainnet Soroban RPC providers (see the
+[Stellar docs](https://developers.stellar.org/docs/data/apis/rpc/providers) for
+the current list):
+
+- Validation Cloud — `https://mainnet.stellar.validationcloud.io/v1/<key>`
+- Stellar Development Foundation (SDF) — public mainnet RPC
+- Blockdaemon — public mainnet RPC
+- QuickNode — public mainnet RPC
+
+Always check the provider's documentation for current URLs, rate limits, and
+terms before relying on them.
 
 ### Querying Horizon
 
@@ -200,14 +251,25 @@ const signed = await window.freighter?.signTransaction(txXdr, {
 
 ### Contract ID validation
 
-All contract IDs are validated against the Soroban address format before saving:
+All contract IDs are validated with `StrKey.isValidContract()` from
+`@stellar/stellar-sdk` before saving. This verifies the full StrKey encoding,
+including the CRC16 checksum, so a single-character typo is rejected instead of
+being registered as a contract that never produces alerts.
 
 ```ts
 import { isValidContractId } from '@/lib/stellar'
 
-isValidContractId('CAAAA...') // true — starts with C, 56 base-32 chars
-isValidContractId('GAAAA...') // false — that's a Stellar account address
+isValidContractId('CAAAA...') // true — valid C-address with correct checksum
+isValidContractId('CAAAA..X') // false — bad checksum (one character changed)
+isValidContractId('GAAAA...') // false — bad format (account address, not a contract)
 ```
+
+The error message distinguishes the two failure modes:
+
+- **Bad format** — the value is not a 56-character `C...` StrKey string (e.g. a
+  `G...` account address or arbitrary text)
+- **Bad checksum** — the value has the right shape but the CRC16 checksum does
+  not match, which almost always means a typo
 
 ### Stellar Expert links
 
@@ -248,6 +310,17 @@ When a rule fires, the core engine POSTs this JSON to the registered webhook URL
 ```
 
 The `Test` button on the Add Contract form sends a mock payload to your endpoint so you can verify delivery before going live.
+
+## Error tracking (Sentry)
+
+Client-side errors — such as localStorage parse failures and Freighter
+exceptions — are reported to [Sentry](https://sentry.io) when
+`NEXT_PUBLIC_SENTRY_DSN` is set. If the variable is unset, error tracking is
+completely disabled and the app behaves as before.
+
+- The `storageLogger` error handler forwards localStorage parse errors to Sentry
+- Public keys and webhook URLs are scrubbed from events before they are sent (PII scrubbing)
+- Source maps are uploaded in CI only when the `SENTRY_AUTH_TOKEN` secret is present
 
 ## CI
 
