@@ -13,13 +13,13 @@ import WebhookLog from '@/components/WebhookLog'
 import RuleBuilder from '@/components/RuleBuilder'
 import CopyButton from '@/components/CopyButton'
 import MetadataSection from '@/components/MetadataSection'
+import ContractDetailLoading from './loading'
 
 export default function ContractDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const { trackEvent } = useAnalytics()
   const [contract, setContract] = useState<WatchedContract | null>(null)
   const [alerts, setAlerts] = useState<AlertPayload[]>([])
-  const [mounted, setMounted] = useState(false)
   const [contractNotFound, setContractNotFound] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
   const [showEditRules, setShowEditRules] = useState(false)
@@ -37,12 +37,10 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
     const c = getContract(params.id)
     if (!c) { 
       setContractNotFound(true)
-      setMounted(true)
       return 
     }
     setContract(c)
     setAlerts(getAlerts(params.id))
-    setMounted(true)
   }, [params.id, router])
 
   function handleDelete() {
@@ -143,8 +141,6 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
     }
   }
 
-  if (!mounted) return null
-
   if (contractNotFound) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -172,7 +168,7 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
     )
   }
 
-  if (!contract) return null
+  if (!contract) return <ContractDetailLoading />
 
   return (
     <div className="space-y-8 max-w-4xl">
