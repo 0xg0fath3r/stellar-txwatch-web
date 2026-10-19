@@ -24,10 +24,11 @@ const ruleTypes: AlertRuleType[] = [
 
 function exportCSV(alerts: AlertPayload[]) {
   const rows = [
-    ['Time', 'Rule', 'Tx Hash', 'Function', 'Amount'],
+    ['Time', 'Rule', 'Rule Name', 'Tx Hash', 'Function', 'Amount'],
     ...alerts.map((a) => [
       new Date(a.timestamp).toLocaleString(),
       a.rule_triggered,
+      a.rule_name ?? '',
       a.transaction_hash,
       a.function_name ?? 'N/A',
       a.amount !== undefined ? `${a.amount} XLM` : 'N/A',
@@ -104,45 +105,97 @@ export default function WebhookLog({ alerts, network }: WebhookLogProps) {
         {filteredAlerts.length === 0 ? (
           <p className="text-sm text-zinc-500 py-4">No alerts match the selected filter.</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-800 text-left">
-                <th className="pb-3 pr-4 text-xs font-medium text-zinc-500 uppercase tracking-wider">Time</th>
-                <th className="pb-3 pr-4 text-xs font-medium text-zinc-500 uppercase tracking-wider">Rule</th>
-                <th className="pb-3 pr-4 text-xs font-medium text-zinc-500 uppercase tracking-wider">Tx Hash</th>
-                <th className="pb-3 pr-4 text-xs font-medium text-zinc-500 uppercase tracking-wider">Function</th>
-                <th className="pb-3 text-xs font-medium text-zinc-500 uppercase tracking-wider">Amount</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800/50">
-              {filteredAlerts.map((alert, i) => (
-                <tr key={i} className="hover:bg-zinc-800/30 transition-colors">
-                  <td className="py-3 pr-4 text-zinc-400 whitespace-nowrap">
-                    {formatDateTime(alert.timestamp)}
-                  </td>
-                  <td className="py-3 pr-4">
-                    <AlertRuleBadge type={alert.rule_triggered as AlertRuleType} />
-                  </td>
-                  <td className="py-3 pr-4">
-                    <a
-                      href={explorerTxUrl(network, alert.transaction_hash)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-indigo-400 hover:text-indigo-300 transition-colors"
-                    >
-                      {truncateId(alert.transaction_hash)}
-                    </a>
-                  </td>
-                  <td className="py-3 pr-4 font-mono text-zinc-400">
-                    {alert.function_name ?? 'N/A'}
-                  </td>
-                  <td className="py-3 text-zinc-400">
-                    {alert.amount !== undefined ? `${alert.amount} XLM` : 'N/A'}
-                  </td>
-                </tr>
+          /*
+           * We use a div-based grid layout instead of a native <table> so that
+           * react-virtual can absolutely position rows inside a single tall
+           * container without breaking table semantics.  The visual appearance
+           * is identical to the previous <table> implementation.
+           */
+          <div role="table" aria-label="Alert history" className="w-full text-sm min-w-[640px]">
+            {/* Header */}
+            <div
+              role="row"
+              className="grid border-b border-zinc-800 pb-3 mb-0"
+              style={{ gridTemplateColumns: '160px 180px 1fr 140px 120px' }}
+            >
+              {['Time', 'Rule', 'Tx Hash', 'Function', 'Amount'].map((h) => (
+                <div
+                  key={h}
+                  role="columnheader"
+                  className="pr-4 text-xs font-medium text-zinc-500 uppercase tracking-wider"
+                >
+                  {h}
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+
+            {/* Virtualised scrollable body */}
+            <div
+              ref={parentRef}
+              role="rowgroup"
+              style={{ height: VIEWPORT_HEIGHT, overflowY: 'auto' }}
+            >
+              {/* Total height spacer — tells the browser the true scroll height */}
+              <div
+                style={{
+                  height: virtualizer.getTotalSize(),
+                  width: '100%',
+                  position: 'relative',
+                }}
+              >
+                {virtualizer.getVirtualItems().map((virtualRow) => {
+                  const alert = filteredAlerts[virtualRow.index]
+                  return (
+                    <div
+                      key={virtualRow.key}
+                      role="row"
+                      data-index={virtualRow.index}
+                      ref={virtualizer.measureElement}
+                      className="grid hover:bg-zinc-800/30 transition-colors border-b border-zinc-800/50"
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualRow.start}px)`,
+                        minHeight: ROW_HEIGHT,
+                        alignItems: 'center',
+                        gridTemplateColumns: '160px 180px 1fr 140px 120px',
+                      }}
+                    >
+                      <div role="cell" className="pr-4 text-zinc-400 whitespace-nowrap text-xs">
+                        {formatDateTime(alert.timestamp)}
+                      </div>
+                      <div role="cell" className="pr-4 flex flex-col gap-0.5 justify-center">
+                        <AlertRuleBadge type={alert.rule_triggered as AlertRuleType} />
+                        {alert.rule_name && (
+                          <span className="text-xs text-zinc-400 truncate" title={alert.rule_name}>
+                            {alert.rule_name}
+                          </span>
+                        )}
+                      </div>
+                      <div role="cell" className="pr-4">
+                        <a
+                          href={explorerTxUrl(network, alert.transaction_hash)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono text-indigo-400 hover:text-indigo-300 transition-colors"
+                        >
+                          {truncateId(alert.transaction_hash)}
+                        </a>
+                      </div>
+                      <div role="cell" className="pr-4 font-mono text-zinc-400 text-xs truncate">
+                        {alert.function_name ?? 'N/A'}
+                      </div>
+                      <div role="cell" className="text-zinc-400 text-xs">
+                        {alert.amount !== undefined ? `${alert.amount} XLM` : 'N/A'}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

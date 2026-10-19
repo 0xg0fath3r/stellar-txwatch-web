@@ -44,7 +44,7 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
   }
 
   function handleTypeChange(type: AlertRuleType) {
-    setDraft({ type })
+    setDraft((prev) => ({ type, name: prev.name }))
     setError(null)
     setWarning(null)
   }
@@ -68,6 +68,10 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
   }
 
   function addRule() {
+    if (draft.name && draft.name.length > 60) {
+      setError('Rule name must be 60 characters or fewer')
+      return
+    }
     if (draft.type === 'LargeTransfer') {
       if (draft.threshold_xlm === undefined || draft.threshold_xlm === null || isNaN(draft.threshold_xlm)) {
         setError('Enter a valid XLM threshold')
@@ -202,6 +206,24 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
           </div>
         )}
 
+        {/* Optional rule name — shown in rule list, Active Rules, and WebhookLog */}
+        <div>
+          <label className="block text-xs font-medium text-zinc-400 mb-1">
+            Rule Name <span className="text-zinc-600">(optional, max 60 chars)</span>
+          </label>
+          <input
+            type="text"
+            placeholder='e.g. "Treasury withdraw"'
+            maxLength={60}
+            value={draft.name ?? ''}
+            onChange={(e) => updateDraft({ name: e.target.value || undefined })}
+            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500"
+          />
+          {draft.name !== undefined && (
+            <p className="text-xs text-zinc-600 mt-0.5 text-right">{draft.name.length}/60</p>
+          )}
+        </div>
+
         {error && <p className="text-xs text-red-400">{error}</p>}
         {warning && <p className="text-xs text-amber-400">{warning}</p>}
 
@@ -234,6 +256,9 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
             <li key={i} className={`flex items-center justify-between rounded-lg px-3 py-2 border ${editingIndex === i ? 'bg-indigo-900/30 border-indigo-600' : 'bg-zinc-900 border-zinc-800'}`}>
               <div className="flex items-center gap-2 flex-wrap">
                 <AlertRuleBadge type={rule.type} />
+                {rule.name && (
+                  <span className="text-xs font-medium text-zinc-200">{rule.name}</span>
+                )}
                 {formatRuleSummary(rule) && (
                   <span className="text-xs font-mono text-zinc-400">{formatRuleSummary(rule)}</span>
                 )}

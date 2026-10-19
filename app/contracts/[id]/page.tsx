@@ -261,6 +261,9 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
             {contract.rules.map((rule, i) => (
               <div key={i} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
                 <AlertRuleBadge type={rule.type} />
+                {rule.name && (
+                  <span className="text-xs font-medium text-zinc-200">{rule.name}</span>
+                )}
                 {formatRuleSummary(rule) && (
                   <span className="text-xs font-mono text-zinc-400">{formatRuleSummary(rule)}</span>
                 )}
