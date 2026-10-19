@@ -10,6 +10,8 @@ declare global {
       getNetwork: () => Promise<string>
       signTransaction: (xdr: string, options: { networkPassphrase: string }) => Promise<string>
     }
+    /** Globally cached public key set by FreighterConnect after connection. */
+    __freighterPublicKey?: string | null
   }
 }
 

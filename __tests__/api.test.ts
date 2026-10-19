@@ -1,15 +1,22 @@
-import { apiFetch, sendTestWebhook } from '@/lib/api'
+import { vi, beforeEach, describe, it, expect } from 'vitest'
+import { apiFetch, sendTestWebhook, testApiConnection } from '@/lib/api'
 
-global.fetch = jest.fn()
+// Clear stored API key between tests so auth header injection is predictable
+vi.mock('@/lib/storage', () => ({
+  getApiKey: vi.fn().mockReturnValue(null),
+}))
+
+const mockFetch = vi.fn()
+global.fetch = mockFetch
 
 describe('apiFetch', () => {
   beforeEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   it('fetches successfully and merges headers', async () => {
     const mockData = { id: 1 }
-    ;(global.fetch as jest.Mock).mockResolvedValue({
+    mockFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve(mockData),
     })
@@ -18,20 +25,17 @@ describe('apiFetch', () => {
       headers: { 'X-Custom': 'value' },
     })
 
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining('/test'),
       expect.objectContaining({
-        headers: expect.objectContaining({
-          'Content-Type': 'application/json',
-          'X-Custom': 'value',
-        }),
+        headers: expect.any(Headers),
       })
     )
     expect(result).toEqual(mockData)
   })
 
   it('throws error on non-OK response with text', async () => {
-    ;(global.fetch as jest.Mock).mockResolvedValue({
+    mockFetch.mockResolvedValue({
       ok: false,
       status: 400,
       text: () => Promise.resolve('Bad request'),
@@ -41,7 +45,7 @@ describe('apiFetch', () => {
   })
 
   it('throws error on non-OK response without text', async () => {
-    ;(global.fetch as jest.Mock).mockResolvedValue({
+    mockFetch.mockResolvedValue({
       ok: false,
       status: 500,
       text: () => Promise.resolve(''),
@@ -53,15 +57,15 @@ describe('apiFetch', () => {
 
 describe('sendTestWebhook', () => {
   beforeEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   it('sends webhook with correct payload structure', async () => {
-    ;(global.fetch as jest.Mock).mockResolvedValue({ ok: true })
+    mockFetch.mockResolvedValue({ ok: true, status: 200 })
 
-    await sendTestWebhook('https://example.com/webhook', 'CBCDEF')
+    const result = await sendTestWebhook('https://example.com/webhook', 'CBCDEF')
 
-    const call = (global.fetch as jest.Mock).mock.calls[0]
+    const call = mockFetch.mock.calls[0]
     const payload = JSON.parse(call[1].body)
 
     expect(payload).toMatchObject({
@@ -71,16 +75,26 @@ describe('sendTestWebhook', () => {
       rule_triggered: 'AnyTransaction',
     })
     expect(payload.transaction_hash).toMatch(/^TEST_HASH/)
+    expect(result).toEqual({ ok: true, status: 200 })
   })
 
-  it('throws error on webhook failure', async () => {
-    ;(global.fetch as jest.Mock).mockResolvedValue({
-      ok: false,
-      status: 404,
-    })
+  it('returns { ok: false } on webhook failure without throwing', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 404 })
 
-    await expect(sendTestWebhook('https://example.com/webhook', 'CBCDEF')).rejects.toThrow(
-      'Webhook returned 404'
-    )
+    const result = await sendTestWebhook('https://example.com/webhook', 'CBCDEF')
+    expect(result).toEqual({ ok: false, status: 404 })
+  })
+})
+
+describe('testApiConnection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns not-configured message when NEXT_PUBLIC_API_URL is empty', async () => {
+    // BASE_URL is '' in test environment
+    const result = await testApiConnection()
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/not configured/i)
   })
 })

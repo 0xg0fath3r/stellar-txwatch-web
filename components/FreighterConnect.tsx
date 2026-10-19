@@ -2,16 +2,7 @@
 
 import { useState, useEffect } from 'react'
 
-declare global {
-  interface Window {
-    freighter?: {
-      isConnected: () => Promise<boolean>
-      getPublicKey: () => Promise<string>
-      getNetwork: () => Promise<string>
-    }
-    __freighterPublicKey?: string | null
-  }
-}
+// `window.freighter` type is declared in lib/useFreighter.ts
 
 const WALLET_STORAGE_KEY = 'freighter_public_key'
 

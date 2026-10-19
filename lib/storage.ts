@@ -233,3 +233,35 @@ export function onContractsChange(callback: () => void): () => void {
   window.addEventListener('storage', handler)
   return () => window.removeEventListener('storage', handler)
 }
+
+/**
+ * API key management for txwatch-core backend authentication.
+ *
+ * The key is stored in localStorage under `txwatch_api_key` and sent as a
+ * Bearer token on requests to the txwatch-core API when
+ * `NEXT_PUBLIC_API_URL` is configured.
+ */
+const API_KEY_STORAGE_KEY = 'txwatch_api_key'
+
+export function getApiKey(): string | null {
+  const storage = getStorage()
+  if (!storage) return null
+  return storage.getItem(API_KEY_STORAGE_KEY)
+}
+
+export function setApiKey(key: string): void {
+  const storage = getStorage()
+  if (!storage) return
+  const trimmed = key.trim()
+  if (trimmed) {
+    storage.setItem(API_KEY_STORAGE_KEY, trimmed)
+  } else {
+    storage.removeItem(API_KEY_STORAGE_KEY)
+  }
+}
+
+export function clearApiKey(): void {
+  const storage = getStorage()
+  if (!storage) return
+  storage.removeItem(API_KEY_STORAGE_KEY)
+}
