@@ -45,6 +45,8 @@ fix(page): correct Y
 chore: update deps
 ```
 
+Releases are automated with [release-please](https://github.com/googleapis/release-please): commits on `main` are collected into a release PR that bumps the version and updates `CHANGELOG.md`. Merging it tags the release, publishes GitHub release notes and pushes the Docker image to GHCR. `feat` bumps the minor version, `fix` the patch, and a `!` / `BREAKING CHANGE:` footer the major (the minor while still on `0.x`).
+
 ## TypeScript types
 
 All types live in `types/index.ts` and must stay in sync with the Rust structs in `stellar-txwatch-core`. Do not add fields here without a matching change in the core engine.
