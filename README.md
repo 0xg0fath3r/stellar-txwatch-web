@@ -48,6 +48,9 @@ Open [http://localhost:3000](http://localhost:3000).
 ```
 .github/
   workflows/ci.yml            # Lint, type-check and build on every push/PR to main
+  ISSUE_TEMPLATE/             # Bug report, feature request and docs issue forms
+  pull_request_template.md    # PR summary, linked issue and test checklist
+  CODEOWNERS                  # Area-based review routing
 app/
   layout.tsx                  # Root layout: nav, wallet status, global styles
   page.tsx                    # Landing page
