@@ -1,22 +1,26 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { WatchedContract, AlertPayload, AlertRule } from '@/types'
 import { getContract, deleteContract, getAlerts, saveContract } from '@/lib/storage'
 import { truncateId, explorerContractUrl, isValidUrl } from '@/lib/stellar'
-import { formatDate, formatRuleSummary } from '@/lib/format'
+import { sendTestWebhook } from '@/lib/api'
+import { formatRuleSummary } from '@/lib/format'
 import { useAnalytics } from '@/lib/useAnalytics'
+import { useTimezone } from '@/components/TimezoneProvider'
+import { useToast } from '@/components/ToastProvider'
 import NetworkBadge from '@/components/NetworkBadge'
 import AlertRuleBadge from '@/components/AlertRuleBadge'
 import WebhookLog from '@/components/WebhookLog'
 import RuleBuilder from '@/components/RuleBuilder'
 import CopyButton from '@/components/CopyButton'
-import MetadataSection from '@/components/MetadataSection'
 
 export default function ContractDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const { trackEvent } = useAnalytics()
+  const { formatDate: tzFormatDate, isoString, mode, toggleMode } = useTimezone()
+  const { addToast } = useToast()
   const [contract, setContract] = useState<WatchedContract | null>(null)
   const [alerts, setAlerts] = useState<AlertPayload[]>([])
   const [mounted, setMounted] = useState(false)
@@ -33,6 +37,13 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   const [editedWebhookUrl, setEditedWebhookUrl] = useState('')
   const [metadataError, setMetadataError] = useState<string | null>(null)
 
+  // Test webhook state (#424)
+  const [testStatus, setTestStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle')
+  const [testError, setTestError] = useState<string | null>(null)
+  const [testStatusCode, setTestStatusCode] = useState<number | null>(null)
+  const [testLatency, setTestLatency] = useState<number | null>(null)
+  const testAbortRef = useRef<AbortController | null>(null)
+
   useEffect(() => {
     const c = getContract(params.id)
     if (!c) { 
@@ -43,7 +54,60 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
     setContract(c)
     setAlerts(getAlerts(params.id))
     setMounted(true)
+    // Client-only title from contract data (#422)
+    document.title = `${c.label} · TxWatch`
   }, [params.id, router])
+
+  // Clean up test controller on unmount
+  useEffect(() => {
+    return () => { testAbortRef.current?.abort() }
+  }, [])
+
+  // Update title when contract label changes (e.g. after metadata edit)
+  useEffect(() => {
+    if (contract) {
+      document.title = `${contract.label} · TxWatch`
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contract?.label])
+
+  async function handleTestWebhook() {
+    if (!contract) return
+    testAbortRef.current?.abort()
+    const controller = new AbortController()
+    testAbortRef.current = controller
+    setTestStatus('sending')
+    setTestError(null)
+    setTestStatusCode(null)
+    setTestLatency(null)
+    const start = performance.now()
+    try {
+      const { status, ok } = await sendTestWebhook(
+        contract.webhook_url,
+        contract.contract_id,
+        contract.network,
+        controller.signal
+      )
+      const elapsed = Math.round(performance.now() - start)
+      setTestLatency(elapsed)
+      setTestStatusCode(status)
+      if (ok) {
+        setTestStatus('ok')
+        addToast('Test webhook delivered successfully', 'success')
+      } else {
+        setTestStatus('error')
+        setTestError(`Server responded with ${status}`)
+        addToast(`Test webhook failed: ${status}`, 'error')
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return
+      const elapsed = Math.round(performance.now() - start)
+      setTestLatency(elapsed)
+      setTestStatus('error')
+      setTestError(err instanceof Error ? err.message : 'Request failed')
+      addToast(`Test webhook failed: ${err instanceof Error ? err.message : 'Request failed'}`, 'error')
+    }
+  }
 
   function handleDelete() {
     deleteContract(params.id)
@@ -222,7 +286,18 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
           <div className="flex items-center justify-between mb-1">
             <p className="text-xs text-zinc-500">Webhook URL</p>
-            <CopyButton text={contract.webhook_url} />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestWebhook}
+                disabled={testStatus === 'sending'}
+                className="px-2 py-0.5 rounded-md border border-zinc-700 hover:border-zinc-500 text-xs text-zinc-300 hover:text-zinc-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Send a test payload to this webhook endpoint"
+              >
+                {testStatus === 'sending' ? 'Sending…' : testStatus === 'ok' ? `${testStatusCode} OK` : testStatus === 'error' ? `${testStatusCode ?? 'ERR'} Failed` : 'Send test'}
+              </button>
+              <CopyButton text={contract.webhook_url} />
+            </div>
           </div>
           <a
             href={contract.webhook_url}
@@ -232,11 +307,23 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
           >
             {contract.webhook_url}
           </a>
+          {testStatus === 'error' && testError && (
+            <p className="mt-1 text-xs text-red-400">{testError}</p>
+          )}
+          {testStatus === 'ok' && (
+            <p className="mt-1 text-xs text-emerald-400">
+              Test payload delivered — {testStatusCode} received{testLatency !== null ? ` · ${testLatency}ms` : ''}
+            </p>
+          )}
         </div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
           <p className="text-xs text-zinc-500 mb-1">Registered</p>
-          <p className="text-sm text-zinc-300">{formatDate(contract.created_at)}</p>
-          <p className="text-xs text-zinc-500 mt-1">{new Date(contract.created_at).toLocaleTimeString()}</p>
+          <p className="text-sm text-zinc-300" title={isoString(contract.created_at)}>{tzFormatDate(contract.created_at)}</p>
+          <p className="text-xs text-zinc-500 mt-1" title={isoString(contract.created_at)}>
+            {mode === 'utc'
+              ? new Date(contract.created_at).toLocaleTimeString('en-US', { timeZone: 'UTC' }) + ' UTC'
+              : new Date(contract.created_at).toLocaleTimeString()}
+          </p>
         </div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
           <p className="text-xs text-zinc-500 mb-1">{alerts.length === 0 ? 'Total Alerts' : 'Last Alert'}</p>
@@ -244,11 +331,30 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
             <p className="text-sm text-zinc-300">No alerts yet</p>
           ) : (
             <>
-              <p className="text-sm text-zinc-300">{formatDate(alerts[0].timestamp)}</p>
-              <p className="text-xs text-zinc-500 mt-1">{new Date(alerts[0].timestamp).toLocaleTimeString()}</p>
+              <p className="text-sm text-zinc-300" title={isoString(alerts[0].timestamp)}>{tzFormatDate(alerts[0].timestamp)}</p>
+              <p className="text-xs text-zinc-500 mt-1" title={isoString(alerts[0].timestamp)}>
+                {mode === 'utc'
+                  ? new Date(alerts[0].timestamp).toLocaleTimeString('en-US', { timeZone: 'UTC' }) + ' UTC'
+                  : new Date(alerts[0].timestamp).toLocaleTimeString()}
+              </p>
             </>
           )}
         </div>
+      </div>
+
+      {/* Timezone toggle (#425) */}
+      <div className="flex items-center gap-2 text-xs text-zinc-500">
+        <span>Timezone:</span>
+        <button
+          type="button"
+          onClick={toggleMode}
+          className="px-2 py-1 rounded-md border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-zinc-100 transition-colors"
+          title="Toggle between local and UTC time display"
+        >
+          {mode === 'utc' ? 'UTC' : 'Local'}
+        </button>
+        <span className="text-zinc-600">·</span>
+        <span>Hover any timestamp to see full ISO-8601</span>
       </div>
 
       {/* Active Rules */}

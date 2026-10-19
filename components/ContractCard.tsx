@@ -1,9 +1,11 @@
-import Link from 'next/link'
+'use client'
+
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { WatchedContract } from '@/types'
 import NetworkBadge from './NetworkBadge'
 import { truncateId } from '@/lib/stellar'
-import { formatDate } from '@/lib/format'
+import { useTimezone } from '@/components/TimezoneProvider'
 
 interface ContractCardProps {
   contract: WatchedContract
@@ -14,6 +16,7 @@ interface ContractCardProps {
 export default function ContractCard({ contract, lastAlertTime, highlight }: ContractCardProps) {
   const hasWebhook = Boolean(contract.webhook_url)
   const [active, setActive] = useState(highlight)
+  const { formatDate, isoString, mode } = useTimezone()
 
   useEffect(() => {
     if (!highlight) return
@@ -57,7 +60,9 @@ export default function ContractCard({ contract, lastAlertTime, highlight }: Con
           {contract.rules.length === 1 ? 'rule' : 'rules'} active
         </span>
         {lastAlertTime ? (
-          <span>Last alert {formatDate(lastAlertTime)}</span>
+          <span title={isoString(lastAlertTime)}>
+            Last alert {formatDate(lastAlertTime)}{mode === 'utc' ? ' UTC' : ''}
+          </span>
         ) : (
           <span>No alerts yet</span>
         )}

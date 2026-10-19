@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    document.title = 'Dashboard · TxWatch'
     setAlertsToday(getTodayAlertCount())
     setMounted(true)
   }, [])

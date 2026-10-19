@@ -5,7 +5,7 @@ import { explorerTxUrl } from '@/lib/stellar'
 import { Network } from '@/types'
 import EmptyState from './EmptyState'
 import { truncateId } from '@/lib/stellar'
-import { formatDateTime } from '@/lib/format'
+import { useTimezone } from '@/components/TimezoneProvider'
 import { useState } from 'react'
 import AlertRuleBadge from './AlertRuleBadge'
 
@@ -45,6 +45,7 @@ function exportCSV(alerts: AlertPayload[]) {
 
 export default function WebhookLog({ alerts, network }: WebhookLogProps) {
   const [selectedFilter, setSelectedFilter] = useState<AlertRuleType | null>(null)
+  const { formatDateTime, isoString, mode, toggleMode } = useTimezone()
 
   const filteredAlerts = selectedFilter
     ? alerts.filter((a) => a.rule_triggered === selectedFilter)
@@ -94,12 +95,22 @@ export default function WebhookLog({ alerts, network }: WebhookLogProps) {
           <span className="text-xs text-zinc-500">
             {filteredAlerts.length} of {alerts.length} alerts
           </span>
-          <button
-            onClick={() => exportCSV(filteredAlerts)}
-            className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
-          >
-            Export CSV
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={toggleMode}
+              className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors border border-zinc-700 rounded px-2 py-0.5"
+              title="Toggle UTC / local time display"
+            >
+              {mode === 'utc' ? 'UTC' : 'Local'}
+            </button>
+            <button
+              onClick={() => exportCSV(filteredAlerts)}
+              className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              Export CSV
+            </button>
+          </div>
         </div>
         {filteredAlerts.length === 0 ? (
           <p className="text-sm text-zinc-500 py-4">No alerts match the selected filter.</p>
@@ -118,7 +129,9 @@ export default function WebhookLog({ alerts, network }: WebhookLogProps) {
               {filteredAlerts.map((alert, i) => (
                 <tr key={i} className="hover:bg-zinc-800/30 transition-colors">
                   <td className="py-3 pr-4 text-zinc-400 whitespace-nowrap">
-                    {formatDateTime(alert.timestamp)}
+                    <span title={isoString(alert.timestamp)}>
+                      {formatDateTime(alert.timestamp)}
+                    </span>
                   </td>
                   <td className="py-3 pr-4">
                     <AlertRuleBadge type={alert.rule_triggered as AlertRuleType} />

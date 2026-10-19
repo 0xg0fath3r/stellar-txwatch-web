@@ -7,6 +7,7 @@ import { isValidContractId, isValidUrl } from '@/lib/stellar'
 import { saveContract, getContracts } from '@/lib/storage'
 import { sendTestWebhook } from '@/lib/api'
 import { useFreighterConnection } from '@/lib/useFreighterConnection'
+import { useToast } from '@/components/ToastProvider'
 import RuleBuilder from '@/components/RuleBuilder'
 import FreighterConnect from '@/components/FreighterConnect'
 
@@ -21,7 +22,8 @@ interface FormErrors {
 
 export default function NewContractPage() {
   const router = useRouter()
-  const { isConnected, publicKey } = useFreighterConnection()
+  const { isConnected } = useFreighterConnection()
+  const { addToast } = useToast()
   const [networkWarning, setNetworkWarning] = useState<string | null>(null)
   const [label, setLabel] = useState('')
   const [contractId, setContractId] = useState('')
@@ -33,10 +35,12 @@ export default function NewContractPage() {
   const [testStatus, setTestStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle')
   const [testError, setTestError] = useState<string | null>(null)
   const [testStatusCode, setTestStatusCode] = useState<number | null>(null)
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const testAbortRef = useRef<AbortController | null>(null)
 
-  useEffect(() => () => testAbortRef.current?.abort(), [])
+  useEffect(() => {
+    document.title = 'Add Contract · TxWatch'
+    return () => { testAbortRef.current?.abort() }
+  }, [])
 
   function handleWalletConnect() {
     setErrors((prev) => ({ ...prev, wallet: undefined }))
@@ -76,10 +80,6 @@ export default function NewContractPage() {
     )
   }
 
-  function isWalletConnected(): boolean {
-    return isConnected && !!publicKey
-  }
-
   async function checkNetworkMismatch(selectedNetwork: Network) {
     if (!window.freighter) return
     try {
@@ -112,6 +112,7 @@ export default function NewContractPage() {
     }
 
     setSaving(true)
+    const now = Date.now()
     const contract: WatchedContract = {
       id: crypto.randomUUID(),
       label: label.trim(),
@@ -119,7 +120,8 @@ export default function NewContractPage() {
       network,
       rules,
       webhook_url: webhookUrl.trim(),
-      created_at: Date.now(),
+      created_at: now,
+      updated_at: now,
     }
     saveContract(contract)
     try {
@@ -127,7 +129,7 @@ export default function NewContractPage() {
     } catch {
       // ignore storage errors
     }
-    setToast({ message: `Contract "${contract.label}" saved successfully!`, type: 'success' })
+    addToast(`Contract "${contract.label}" saved successfully!`, 'success')
     setTimeout(() => {
       router.push(`/contracts/${contract.id}`)
     }, 1500)
@@ -168,7 +170,6 @@ export default function NewContractPage() {
 
   return (
     <>
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <div className="max-w-2xl mx-auto space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-zinc-100">Add Contract</h1>

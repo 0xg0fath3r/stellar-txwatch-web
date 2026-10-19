@@ -4,9 +4,14 @@ import Link from 'next/link'
 import FreighterConnect from '@/components/FreighterConnect'
 import WalletStatusBadge from '@/components/WalletStatusBadge'
 import MobileNav from '@/components/MobileNav'
+import { ToastProvider } from '@/components/ToastProvider'
+import { TimezoneProvider } from '@/components/TimezoneProvider'
 
 export const metadata: Metadata = {
-  title: 'TxWatch — Soroban Contract Monitoring',
+  title: {
+    default: 'TxWatch',
+    template: '%s · TxWatch',
+  },
   description: 'Real-time monitoring and alerts for Soroban smart contracts',
 }
 
@@ -14,6 +19,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="dark">
       <body className="min-h-screen bg-zinc-950 text-zinc-100">
+        <TimezoneProvider>
+        <ToastProvider>
         <header className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm sticky top-0 z-50">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2 font-bold text-lg tracking-tight">
@@ -47,6 +54,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
           {children}
         </main>
+        </ToastProvider>
+        </TimezoneProvider>
       </body>
     </html>
   )

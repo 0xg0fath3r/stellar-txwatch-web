@@ -61,6 +61,7 @@ export default function ContractsPage() {
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
 
   useEffect(() => {
+    document.title = 'Contracts · TxWatch'
     const all = getContracts()
     setAllContracts(all)
     setMounted(true)
