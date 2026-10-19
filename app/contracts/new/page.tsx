@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useRef, useEffect, useMemo } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { AlertRule, Network, WatchedContract } from '@/types'
 import { isValidContractId, isValidUrl } from '@/lib/stellar'
 import { saveContract, getContracts } from '@/lib/storage'
@@ -9,6 +9,7 @@ import { sendTestWebhook } from '@/lib/api'
 import { useFreighterConnection } from '@/lib/useFreighterConnection'
 import RuleBuilder from '@/components/RuleBuilder'
 import FreighterConnect from '@/components/FreighterConnect'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 interface FormErrors {
   label?: string
@@ -21,6 +22,7 @@ interface FormErrors {
 
 export default function NewContractPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { isConnected, publicKey } = useFreighterConnection()
   const [networkWarning, setNetworkWarning] = useState<string | null>(null)
   const [label, setLabel] = useState('')
@@ -35,8 +37,105 @@ export default function NewContractPage() {
   const [testStatusCode, setTestStatusCode] = useState<number | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const testAbortRef = useRef<AbortController | null>(null)
+  const [initialValues, setInitialValues] = useState<{
+    label: string
+    contractId: string
+    network: Network
+    webhookUrl: string
+    rules: AlertRule[]
+  }>({ label: '', contractId: '', network: 'testnet', webhookUrl: '', rules: [] })
+  const [saved, setSaved] = useState(false)
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
+  const pendingNavigationRef = useRef<string | null>(null)
+
+  // Hydrate from Duplicate action (#414)
+  useEffect(() => {
+    if (searchParams.get('duplicate') !== '1') return
+    let hydrated: {
+      label: string
+      contractId: string
+      network: Network
+      webhookUrl: string
+      rules: AlertRule[]
+    } | null = null
+    try {
+      const raw = sessionStorage.getItem('txwatch_duplicate_contract')
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<WatchedContract>
+        hydrated = {
+          label: typeof parsed.label === 'string' ? parsed.label : '',
+          contractId: '',
+          network: 'testnet',
+          webhookUrl: typeof parsed.webhook_url === 'string' ? parsed.webhook_url : '',
+          rules: Array.isArray(parsed.rules) ? parsed.rules : [],
+        }
+      }
+    } catch {
+      hydrated = null
+    }
+    if (hydrated) {
+      setLabel(hydrated.label)
+      setWebhookUrl(hydrated.webhookUrl)
+      setRules(hydrated.rules)
+      setInitialValues(hydrated)
+    }
+    try {
+      sessionStorage.removeItem('txwatch_duplicate_contract')
+    } catch {
+      // ignore storage errors
+    }
+    // Only hydrate once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => () => testAbortRef.current?.abort(), [])
+
+  const isDirty = useMemo(() => {
+    if (saved) return false
+    return (
+      label !== initialValues.label ||
+      contractId !== initialValues.contractId ||
+      network !== initialValues.network ||
+      webhookUrl !== initialValues.webhookUrl ||
+      JSON.stringify(rules) !== JSON.stringify(initialValues.rules)
+    )
+  }, [saved, label, contractId, network, webhookUrl, rules, initialValues])
+
+  // beforeunload prompt when dirty (#417)
+  useEffect(() => {
+    if (!isDirty) return
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault()
+      e.returnValue = ''
+      return ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [isDirty])
+
+  function requestNavigation(target: string | null) {
+    if (!isDirty) {
+      if (target) router.push(target)
+      else router.back()
+      return
+    }
+    pendingNavigationRef.current = target
+    setShowLeaveConfirm(true)
+  }
+
+  function handleLeaveConfirm() {
+    setShowLeaveConfirm(false)
+    const target = pendingNavigationRef.current
+    pendingNavigationRef.current = null
+    setSaved(true)
+    if (target) router.push(target)
+    else router.back()
+  }
+
+  function handleLeaveCancel() {
+    setShowLeaveConfirm(false)
+    pendingNavigationRef.current = null
+  }
 
   function handleWalletConnect() {
     setErrors((prev) => ({ ...prev, wallet: undefined }))
@@ -127,6 +226,7 @@ export default function NewContractPage() {
     } catch {
       // ignore storage errors
     }
+    setSaved(true)
     setToast({ message: `Contract "${contract.label}" saved successfully!`, type: 'success' })
     setTimeout(() => {
       router.push(`/contracts/${contract.id}`)
@@ -169,6 +269,15 @@ export default function NewContractPage() {
   return (
     <>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      <ConfirmDialog
+        open={showLeaveConfirm}
+        title="Discard unsaved changes?"
+        message="You have unsaved input on this form. Leaving now will lose your changes, including any alert rules."
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        onConfirm={handleLeaveConfirm}
+        onCancel={handleLeaveCancel}
+      />
       <div className="max-w-2xl mx-auto space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-zinc-100">Add Contract</h1>
@@ -289,7 +398,7 @@ export default function NewContractPage() {
           </button>
           <button
             type="button"
-            onClick={() => router.back()}
+            onClick={() => requestNavigation(null)}
             className="px-4 py-2.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             Cancel

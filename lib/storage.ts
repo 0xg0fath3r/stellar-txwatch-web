@@ -3,7 +3,7 @@ import { WatchedContract, AlertPayload, Network } from '@/types'
 const CONTRACTS_KEY = 'txwatch_contracts'
 const ALERTS_KEY = 'txwatch_alerts'
 const STORAGE_VERSION_KEY = 'txwatch_storage_version'
-const CURRENT_STORAGE_VERSION = 1
+const CURRENT_STORAGE_VERSION = 2
 
 function getStorage(): Storage | undefined {
   if (typeof window !== 'undefined') return window.localStorage
@@ -113,6 +113,19 @@ export function getContracts(): WatchedContract[] {
   return load<WatchedContract>(CONTRACTS_KEY)
 }
 
+export function migrateContractsEnabled() {
+  const contracts = load<WatchedContract>(CONTRACTS_KEY)
+  let changed = false
+  const migrated = contracts.map((contract) => {
+    if (typeof contract.enabled === 'boolean') return contract
+    changed = true
+    return { ...contract, enabled: true }
+  })
+  if (changed) {
+    save(CONTRACTS_KEY, migrated)
+  }
+}
+
 export function getContract(id: string): WatchedContract | undefined {
   return getContracts().find((c) => c.id === id)
 }
@@ -142,6 +155,23 @@ export function deleteContract(id: string) {
   save(CONTRACTS_KEY, getContracts().filter((c) => c.id !== id))
   if (contract) {
     deleteAlerts(contract.contract_id)
+  }
+}
+
+export function restoreContract(contract: WatchedContract, alerts: AlertPayload[]) {
+  const contracts = getContracts().filter((c) => c.id !== contract.id)
+  save(CONTRACTS_KEY, [...contracts, contract])
+
+  if (alerts.length > 0) {
+    const existing = load<AlertPayload>(ALERTS_KEY)
+    const existingIds = new Set(
+      existing.map((a) => (a as AlertPayload & { id?: string }).id).filter(Boolean)
+    )
+    const toRestore = alerts.filter((a) => {
+      const id = (a as AlertPayload & { id?: string }).id
+      return !id || !existingIds.has(id)
+    })
+    save(ALERTS_KEY, [...toRestore, ...existing])
   }
 }
 

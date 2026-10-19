@@ -21,6 +21,7 @@ export interface WatchedContract {
   network: Network
   rules: AlertRule[]
   webhook_url: string
+  enabled: boolean
   created_at: number
   updated_at: number
 }

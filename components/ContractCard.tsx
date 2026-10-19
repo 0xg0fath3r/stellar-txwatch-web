@@ -13,6 +13,7 @@ interface ContractCardProps {
 
 export default function ContractCard({ contract, lastAlertTime, highlight }: ContractCardProps) {
   const hasWebhook = Boolean(contract.webhook_url)
+  const isPaused = contract.enabled === false
   const [active, setActive] = useState(highlight)
 
   useEffect(() => {
@@ -26,8 +27,8 @@ export default function ContractCard({ contract, lastAlertTime, highlight }: Con
     <Link
       href={`/contracts/${contract.id}`}
       className={`block bg-zinc-900 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 hover:bg-zinc-800/60 transition-all group ${
-        active ? 'ring-2 ring-indigo-500/40 animate-pulse' : ''
-      }`}
+        isPaused ? 'opacity-60 grayscale' : ''
+      } ${active ? 'ring-2 ring-indigo-500/40 animate-pulse' : ''}`}
     >
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
@@ -38,7 +39,14 @@ export default function ContractCard({ contract, lastAlertTime, highlight }: Con
             {truncateId(contract.contract_id)}
           </p>
         </div>
-        <NetworkBadge network={contract.network} />
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {isPaused && (
+            <span className="text-xs px-2 py-1 rounded-md bg-zinc-500/15 text-zinc-400 border border-zinc-500/20">
+              Paused
+            </span>
+          )}
+          <NetworkBadge network={contract.network} />
+        </div>
       </div>
 
       {/* Webhook status indicator */}
@@ -54,7 +62,7 @@ export default function ContractCard({ contract, lastAlertTime, highlight }: Con
       <div className="flex items-center justify-between text-xs text-zinc-500">
         <span>
           <span className="text-zinc-300 font-medium">{contract.rules.length}</span>{' '}
-          {contract.rules.length === 1 ? 'rule' : 'rules'} active
+          {contract.rules.length === 1 ? 'rule' : 'rules'} {isPaused ? 'paused' : 'active'}
         </span>
         {lastAlertTime ? (
           <span>Last alert {formatDate(lastAlertTime)}</span>

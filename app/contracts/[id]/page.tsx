@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { WatchedContract, AlertPayload, AlertRule } from '@/types'
-import { getContract, deleteContract, getAlerts, saveContract } from '@/lib/storage'
+import { getContract, deleteContract, getAlerts, saveContract, setEnabled, restoreContract } from '@/lib/storage'
 import { truncateId, explorerContractUrl, isValidUrl } from '@/lib/stellar'
 import { formatDate, formatRuleSummary } from '@/lib/format'
 import { useAnalytics } from '@/lib/useAnalytics'
@@ -26,12 +26,19 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   const [editedRules, setEditedRules] = useState<AlertRule[]>([])
   const [rulesError, setRulesError] = useState<string | null>(null)
   const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
+  const [undoToast, setUndoToast] = useState<{ contract: WatchedContract; alerts: AlertPayload[] } | null>(null)
   
   // Metadata editing state
   const [showEditMetadata, setShowEditMetadata] = useState(false)
   const [editedLabel, setEditedLabel] = useState('')
   const [editedWebhookUrl, setEditedWebhookUrl] = useState('')
   const [metadataError, setMetadataError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!undoToast) return
+    const timer = setTimeout(() => setUndoToast(null), 8000)
+    return () => clearTimeout(timer)
+  }, [undoToast])
 
   useEffect(() => {
     const c = getContract(params.id)
@@ -46,8 +53,36 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   }, [params.id, router])
 
   function handleDelete() {
+    const deletedContract = contract!
+    const deletedAlerts = alerts
     deleteContract(params.id)
+    setShowDelete(false)
+    setUndoToast({ contract: deletedContract, alerts: deletedAlerts })
     router.push('/contracts')
+  }
+
+  function handleUndoDelete() {
+    if (!undoToast) return
+    restoreContract(undoToast.contract, undoToast.alerts)
+    setUndoToast(null)
+    router.push(`/contracts/${undoToast.contract.id}`)
+  }
+
+  function handleDuplicate() {
+    const prefill = {
+      label: `${contract!.label} (copy)`,
+      rules: contract!.rules,
+      webhook_url: contract!.webhook_url,
+    }
+    trackEvent('contract_duplicated', { contractId: params.id })
+    router.push(`/contracts/new?prefill=${encodeURIComponent(JSON.stringify(prefill))}`)
+  }
+
+  function handleToggleEnabled() {
+    const updated = { ...contract!, enabled: !contract!.enabled }
+    setEnabled(params.id, updated.enabled)
+    setContract(updated)
+    trackEvent(updated.enabled ? 'contract_resumed' : 'contract_paused', { contractId: params.id })
   }
 
   function openEditRules() {
@@ -174,14 +209,44 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
 
   if (!contract) return null
 
+  const isPaused = contract.enabled === false
+
   return (
     <div className="space-y-8 max-w-4xl">
+      {/* Undo Delete Toast */}
+      {undoToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 shadow-lg">
+          <p className="text-sm text-zinc-300">
+            Deleted <span className="text-zinc-100 font-medium">{undoToast.contract.label}</span>
+          </p>
+          <button
+            onClick={handleUndoDelete}
+            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
+          >
+            Undo
+          </button>
+          <button
+            onClick={() => setUndoToast(null)}
+            className="text-zinc-500 hover:text-zinc-300 transition-colors"
+            aria-label="Dismiss"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div className="space-y-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold text-zinc-100">{contract.label}</h1>
             <NetworkBadge network={contract.network} />
+            {isPaused && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-900/30 border border-amber-700 text-xs font-medium text-amber-400">
+                Paused
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <a
@@ -196,6 +261,18 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
           </div>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+          <button
+            onClick={handleToggleEnabled}
+            className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+          >
+            {isPaused ? 'Resume' : 'Pause'}
+          </button>
+          <button
+            onClick={handleDuplicate}
+            className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+          >
+            Duplicate
+          </button>
           <button
             onClick={openEditMetadata}
             className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
@@ -354,7 +431,7 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
             <h3 className="text-lg font-semibold text-zinc-100">Delete Contract?</h3>
             <div className="space-y-2 text-sm text-zinc-400">
               <p>
-                This will permanently remove <span className="text-zinc-200 font-medium">{contract.label}</span> and cannot be undone.
+                This will remove <span className="text-zinc-200 font-medium">{contract.label}</span>. You&apos;ll have a few seconds to undo.
               </p>
               <p className="text-xs text-zinc-500">
                 Deleted data:

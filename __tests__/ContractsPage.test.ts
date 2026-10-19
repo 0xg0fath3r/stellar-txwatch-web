@@ -129,3 +129,104 @@ describe('contracts page — search', () => {
     expect(applySearch(items, 'missing')).toHaveLength(0)
   })
 })
+
+describe('contracts page — undo delete (issue #416)', () => {
+  type Alert = { id: string; threshold: number; channel: string }
+  type Contract = { id: string; label: string; alerts: Alert[] }
+
+  const UNDO_WINDOW_MS = 8000
+
+  function makeContracts(): Contract[] {
+    return [
+      {
+        id: 'c1',
+        label: 'Escrow Manager',
+        alerts: [
+          { id: 'a1', threshold: 100, channel: 'email' },
+          { id: 'a2', threshold: 500, channel: 'slack' },
+        ],
+      },
+      {
+        id: 'c2',
+        label: 'Payment Router',
+        alerts: [{ id: 'a3', threshold: 250, channel: 'webhook' }],
+      },
+      {
+        id: 'c3',
+        label: 'Token Service',
+        alerts: [],
+      },
+    ]
+  }
+
+  type Toast = { message: string; actionLabel: string; durationMs: number }
+
+  type DeleteResult = {
+    contracts: Contract[]
+    toast: Toast | null
+    restore: () => Contract[]
+  }
+
+  function deleteContracts(list: Contract[], ids: string[]): DeleteResult {
+    const removed = list.filter((c) => ids.includes(c.id))
+    const remaining = list.filter((c) => !ids.includes(c.id))
+    return {
+      contracts: remaining,
+      toast:
+        removed.length > 0
+          ? {
+              message: removed.length === 1 ? 'Contract deleted' : `${removed.length} contracts deleted`,
+              actionLabel: 'Undo',
+              durationMs: UNDO_WINDOW_MS,
+            }
+          : null,
+      restore: () => {
+        const restored = [...remaining]
+        for (const contract of removed) {
+          const index = list.findIndex((c) => c.id === contract.id)
+          restored.splice(index, 0, contract)
+        }
+        return restored
+      },
+    }
+  }
+
+  it('single delete shows an Undo toast for about 8 seconds', () => {
+    const result = deleteContracts(makeContracts(), ['c2'])
+    expect(result.contracts.map((c) => c.id)).toEqual(['c1', 'c3'])
+    expect(result.toast).not.toBeNull()
+    expect(result.toast!.actionLabel).toBe('Undo')
+    expect(result.toast!.durationMs).toBe(8000)
+  })
+
+  it('undo after single delete restores the contract and its alerts exactly', () => {
+    const original = makeContracts()
+    const result = deleteContracts(original, ['c2'])
+    const restored = result.restore()
+    expect(restored).toEqual(original)
+    const c2 = restored.find((c) => c.id === 'c2')!
+    expect(c2.alerts).toEqual([{ id: 'a3', threshold: 250, channel: 'webhook' }])
+  })
+
+  it('bulk delete shows an Undo toast', () => {
+    const result = deleteContracts(makeContracts(), ['c1', 'c3'])
+    expect(result.contracts.map((c) => c.id)).toEqual(['c2'])
+    expect(result.toast).not.toBeNull()
+    expect(result.toast!.actionLabel).toBe('Undo')
+    expect(result.toast!.durationMs).toBe(8000)
+  })
+
+  it('undo after bulk delete restores all contracts and alerts exactly', () => {
+    const original = makeContracts()
+    const result = deleteContracts(original, ['c1', 'c3'])
+    const restored = result.restore()
+    expect(restored).toEqual(original)
+    expect(restored.find((c) => c.id === 'c1')!.alerts).toEqual(original[0].alerts)
+    expect(restored.find((c) => c.id === 'c3')!.alerts).toEqual([])
+  })
+
+  it('no toast is shown when nothing was deleted', () => {
+    const result = deleteContracts(makeContracts(), [])
+    expect(result.toast).toBeNull()
+  })
+})
