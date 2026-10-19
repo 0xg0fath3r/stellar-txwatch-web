@@ -105,6 +105,12 @@ See [Stellar integration](#stellar-integration) for implementation details.
 | Variable | Description |
 |---|---|
 | `NEXT_PUBLIC_API_URL` | Base URL of the txwatch-core API (optional) |
+| `NEXT_PUBLIC_HORIZON_URL` | Horizon endpoint override (optional) |
+| `NEXT_PUBLIC_SOROBAN_RPC_URL` | Soroban RPC endpoint override (optional) |
+| `DEBUG_STORAGE` | Set to `true` to log storage parse errors in production |
+| `ANALYZE` | Set to `true` to generate the bundle analyzer report on build |
+
+All variables are read and validated in [`lib/env.ts`](./lib/env.ts) with zod — import `env` from there instead of reading `process.env` directly. URLs must include an `http://` or `https://` scheme; trailing slashes are stripped. `next build` and `next dev` fail with a list of problems if any value is invalid.
 
 ## Stellar integration
 

@@ -1,7 +1,8 @@
+import { env } from '@/lib/env'
 import { HORIZON_URLS } from '@/lib/stellar'
 import type { Network } from '@/types'
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
+const BASE_URL = env.NEXT_PUBLIC_API_URL
 
 function getAuthHeaders(): Record<string, string> {
   // Extension point for future authenticated requests

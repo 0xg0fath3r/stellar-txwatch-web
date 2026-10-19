@@ -1,7 +1,13 @@
 import bundleAnalyzer from '@next/bundle-analyzer'
+import { createJiti } from 'jiti'
+
+// Validate environment variables before building; lib/env.ts throws with a
+// readable list of problems if any value is invalid.
+const jiti = createJiti(import.meta.url)
+const { env } = await jiti.import('./lib/env.ts')
 
 const withBundleAnalyzer = bundleAnalyzer({
-  enabled: process.env.ANALYZE === 'true',
+  enabled: env.ANALYZE,
 })
 
 /** @type {import('next').NextConfig} */
