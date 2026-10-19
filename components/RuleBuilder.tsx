@@ -27,15 +27,41 @@ interface RuleBuilderProps {
   /** Optional callback fired whenever a rule is added, updated, or removed.
    *  Intended as an analytics hook point — no behavior depends on it. */
   onRulesChanged?: (rules: AlertRule[], action: 'add' | 'update' | 'remove') => void
+  /** Exported function names parsed from the contract spec. When null/empty,
+   *  function name inputs fall back to plain free text. */
+  exportedFunctions?: string[] | null
 }
 
 const emptyRule = (): AlertRule => ({ type: 'AnyTransaction' })
 
-export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBuilderProps) {
+export default function RuleBuilder({ rules, onChange, onRulesChanged, exportedFunctions }: RuleBuilderProps) {
   const [draft, setDraft] = useState<AlertRule>(emptyRule())
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [warning, setWarning] = useState<string | null>(null)
+
+  const specFunctions = exportedFunctions ?? []
+  const hasSpec = specFunctions.length > 0
+  const specFunctionSet = new Set(specFunctions)
+  const datalistId = 'rule-builder-function-names'
+
+  function unknownFunctionNames(): string[] {
+    if (!hasSpec) return []
+    if (draft.type === 'FunctionCalled') {
+      const name = draft.function_name?.trim()
+      return name && !specFunctionSet.has(name) ? [name] : []
+    }
+    if (draft.type === 'AdminFunctionCalled') {
+      return (draft.function_names ?? []).filter((name) => name && !specFunctionSet.has(name))
+    }
+    return []
+  }
+
+  const unknownNames = unknownFunctionNames()
+  const specWarning =
+    unknownNames.length > 0
+      ? `Function not found in contract spec — rule may never fire: ${unknownNames.join(', ')}`
+      : null
 
   function updateDraft(patch: Partial<AlertRule>) {
     setDraft((prev) => ({ ...prev, ...patch }))
@@ -167,11 +193,20 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
           </div>
         )}
 
+        {hasSpec && (
+          <datalist id={datalistId}>
+            {specFunctions.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
+        )}
+
         {draft.type === 'FunctionCalled' && (
           <div>
             <label className="block text-xs font-medium text-zinc-400 mb-1">Function Name</label>
             <input
               type="text"
+              list={hasSpec ? datalistId : undefined}
               placeholder="e.g. transfer"
               value={draft.function_name ?? ''}
               onChange={(e) => updateDraft({ function_name: e.target.value })}
@@ -187,6 +222,7 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
             </label>
             <input
               type="text"
+              list={hasSpec ? datalistId : undefined}
               placeholder="e.g. set_admin, upgrade, migrate"
               value={draft.function_names?.join(', ') ?? ''}
               onChange={(e) =>
@@ -204,6 +240,7 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
 
         {error && <p className="text-xs text-red-400">{error}</p>}
         {warning && <p className="text-xs text-amber-400">{warning}</p>}
+        {specWarning && <p className="text-xs text-amber-400">{specWarning}</p>}
 
         <div className="flex gap-2">
           <button

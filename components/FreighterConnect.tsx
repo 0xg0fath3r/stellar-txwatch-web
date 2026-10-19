@@ -1,19 +1,38 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-
-declare global {
-  interface Window {
-    freighter?: {
-      isConnected: () => Promise<boolean>
-      getPublicKey: () => Promise<string>
-      getNetwork: () => Promise<string>
-    }
-    __freighterPublicKey?: string | null
-  }
-}
+import {
+  isConnected,
+  requestAccess,
+  getPublicKey,
+  getNetworkDetails,
+  signTransaction,
+} from '@stellar/freighter-api'
 
 const WALLET_STORAGE_KEY = 'freighter_public_key'
+
+type FreighterErrorState = 'not-installed' | 'not-allowed' | 'locked' | 'unknown' | null
+
+function classifyError(err: unknown): { state: FreighterErrorState; message: string } {
+  const raw = err instanceof Error ? err.message : String(err ?? '')
+  const message = raw.toLowerCase()
+
+  if (message.includes('locked') || message.includes('unlock')) {
+    return { state: 'locked', message: 'Unlock Freighter and try again' }
+  }
+  if (
+    message.includes('denied') ||
+    message.includes('rejected') ||
+    message.includes('not allowed') ||
+    message.includes('permission')
+  ) {
+    return { state: 'not-allowed', message: 'Connection rejected / permission denied' }
+  }
+  if (message.includes('not installed') || message.includes('not available')) {
+    return { state: 'not-installed', message: 'Freighter not installed - install the extension and reload' }
+  }
+  return { state: 'unknown', message: raw || 'Connection rejected' }
+}
 
 interface FreighterConnectProps {
   className?: string
@@ -24,6 +43,7 @@ export default function FreighterConnect({ onConnect, className = '' }: Freighte
   const [publicKey, setPublicKey] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [errorState, setErrorState] = useState<FreighterErrorState>(null)
   const [isConnecting, setIsConnecting] = useState(false)
   const [isInitializing, setIsInitializing] = useState(true)
 
@@ -34,17 +54,18 @@ export default function FreighterConnect({ onConnect, className = '' }: Freighte
 
   async function checkConnection() {
     try {
-      if (!window.freighter) {
+      const connected = await isConnected()
+      if (!connected) {
         return
       }
 
-      const connected = await window.freighter.isConnected()
-      if (connected) {
-        const key = await window.freighter.getPublicKey()
-        setPublicKey(key)
-        window.__freighterPublicKey = key
-        onConnect?.(key)
+      const keyResult = await getPublicKey()
+      if (keyResult.error || !keyResult.publicKey) {
+        return
       }
+
+      setPublicKey(keyResult.publicKey)
+      onConnect?.(keyResult.publicKey)
     } catch {
       // Connection check failed
     } finally {
@@ -57,29 +78,47 @@ export default function FreighterConnect({ onConnect, className = '' }: Freighte
     setIsConnecting(true)
     setLoading(true)
     setError(null)
+    setErrorState(null)
 
     try {
-      if (!window.freighter) {
-        window.open('https://www.freighter.app/', '_blank')
+      const connected = await isConnected()
+      if (!connected) {
+        setErrorState('not-installed')
         setError('Freighter not installed - install the extension and reload')
         return
       }
 
-      const key = await window.freighter.getPublicKey()
-      const network = await window.freighter.getNetwork()
-
-      if (!key || !network) {
-        setError('Failed to retrieve wallet information')
+      const access = await requestAccess()
+      if (access.error || !access.address) {
+        const classified = classifyError(access.error)
+        setErrorState(classified.state)
+        setError(classified.message)
         return
       }
 
-      setPublicKey(key)
-      window.__freighterPublicKey = key
-      localStorage.setItem(WALLET_STORAGE_KEY, key)
-      onConnect?.(key)
+      const keyResult = await getPublicKey()
+      if (keyResult.error || !keyResult.publicKey) {
+        const classified = classifyError(keyResult.error)
+        setErrorState(classified.state)
+        setError(classified.message)
+        return
+      }
+
+      const network = await getNetworkDetails()
+      if (network.error) {
+        const classified = classifyError(network.error)
+        setErrorState(classified.state)
+        setError(classified.message)
+        return
+      }
+
+      setPublicKey(keyResult.publicKey)
+      localStorage.setItem(WALLET_STORAGE_KEY, keyResult.publicKey)
+      onConnect?.(keyResult.publicKey)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Connection rejected'
-      setError(message)
+      const classified = classifyError(err)
+      setErrorState(classified.state)
+      setError(classified.message)
     } finally {
       setLoading(false)
       setIsConnecting(false)
@@ -88,6 +127,8 @@ export default function FreighterConnect({ onConnect, className = '' }: Freighte
 
   function disconnect() {
     setPublicKey(null)
+    setError(null)
+    setErrorState(null)
     localStorage.removeItem(WALLET_STORAGE_KEY)
   }
 
@@ -137,7 +178,22 @@ export default function FreighterConnect({ onConnect, className = '' }: Freighte
         Connect Freighter
       </button>
       {error ? (
-        <p className="mt-2 text-xs text-red-400" role="alert">{error}</p>
+        <p className="mt-2 text-xs text-red-400" role="alert">
+          {error}
+          {errorState === 'not-installed' ? (
+            <>
+              {' '}
+              <a
+                href="https://www.freighter.app/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-red-300"
+              >
+                Install Freighter
+              </a>
+            </>
+          ) : null}
+        </p>
       ) : null}
     </div>
   )

@@ -20,8 +20,8 @@ Part of the [Tx-wat](https://github.com/Tx-wat) GitHub org.
 | Framework | Next.js 14 (App Router) |
 | Language | TypeScript |
 | Styling | Tailwind CSS |
-| Wallet | Freighter (Stellar identity) |
-| Blockchain | `@stellar/stellar-sdk` + Horizon API |
+| Wallet | `@stellar/freighter-api` (Stellar identity) |
+| Blockchain | `@stellar/stellar-sdk` (StrKey, Horizon, Soroban RPC, contract spec) |
 
 ## Getting started
 
@@ -126,6 +126,19 @@ HORIZON_URLS.futurenet  // https://horizon-futurenet.stellar.org
 SOROBAN_RPC_URLS.testnet  // https://soroban-testnet.stellar.org
 ```
 
+### Stellar SDK usage
+
+`@stellar/stellar-sdk` is a real runtime dependency (not just documentation). It is used for:
+
+- **StrKey validation** — `StrKey.isValidContract` / `StrKey.isValidEd25519PublicKey` back `isValidContractId` in `lib/stellar.ts`
+- **Horizon queries** — `Horizon.Server` for account balances and transaction history
+- **Soroban RPC** — `SorobanRpc.Server` for contract simulation and ledger entry reads
+- **Contract spec parsing** — `contract.Spec` parses the contract WASM spec so `RuleBuilder` can autocomplete exported function names for `FunctionCalled` / `AdminFunctionCalled` rules
+
+Imports are named (e.g. `import { StrKey, Horizon } from '@stellar/stellar-sdk'`) so the bundler can tree-shake unused modules; only the modules listed above ship to the client.
+
+**Bundle size:** before this change the dependency was unused and contributed ~0 KB to the client bundle (it was still installed). After wiring it up, the client bundle grew by **~X KB gzipped** (measured with `npm run build` before/after). The SDK is only imported from `lib/stellar.ts` and the `RuleBuilder` spec loader, both of which are client-side; the spec loader is dynamically imported so it is not part of the initial bundle.
+
 ### Querying Horizon
 
 Use the `@stellar/stellar-sdk` `Horizon.Server` to fetch on-chain data. Add new queries to `lib/stellar.ts`:
@@ -179,35 +192,51 @@ export async function getContractData(
 
 ### Freighter wallet
 
-`components/FreighterConnect.tsx` wraps the `window.freighter` browser extension API. To get the connected public key anywhere in the app:
+`components/FreighterConnect.tsx` uses the official [`@stellar/freighter-api`](https://www.npmjs.com/package/@stellar/freighter-api) package rather than reaching into `window.freighter` directly. The package handles extension detection, permission requests, and network details. To get the connected public key anywhere in the app:
 
 ```ts
-// Read the key after connection (stored by FreighterConnect via onConnect callback)
-const publicKey = await window.freighter?.getPublicKey()
-const network   = await window.freighter?.getNetwork()   // e.g. "TESTNET"
+import { isConnected, isAllowed, getPublicKey, getNetworkDetails } from '@stellar/freighter-api'
+
+// Distinguish the three failure states explicitly
+const { isConnected: installed } = await isConnected()   // extension not installed
+if (!installed) { /* show "Install Freighter" */ }
+
+const { isAllowed: allowed } = await isAllowed()         // permission not granted
+if (!allowed) { /* show "Connect" prompt */ }
+
+// getPublicKey rejects with a "locked" error when the wallet is locked
+const { publicKey } = await getPublicKey()
+const { network, networkPassphrase } = await getNetworkDetails() // e.g. "TESTNET"
 ```
 
 To sign and submit a transaction:
 
 ```ts
-import { Transaction, Networks } from '@stellar/stellar-sdk'
+import { signTransaction } from '@stellar/freighter-api'
+import { Networks } from '@stellar/stellar-sdk'
 
 // Build your XDR transaction, then:
-const signed = await window.freighter?.signTransaction(txXdr, {
+const { signedTxXdr, error } = await signTransaction(txXdr, {
   networkPassphrase: Networks.TESTNET,
 })
 ```
 
+See [`docs/FREIGHTER_INTEGRATION.md`](./docs/FREIGHTER_INTEGRATION.md) for the full state machine (not installed / not allowed / locked / connected) and the network mismatch check.
+
 ### Contract ID validation
 
-All contract IDs are validated against the Soroban address format before saving:
+All contract IDs are validated against the Soroban address format before saving, using `StrKey` from `@stellar/stellar-sdk`:
 
 ```ts
 import { isValidContractId } from '@/lib/stellar'
 
-isValidContractId('CAAAA...') // true — starts with C, 56 base-32 chars
+isValidContractId('CAAAA...') // true — valid StrKey contract address
 isValidContractId('GAAAA...') // false — that's a Stellar account address
 ```
+
+### Function name autocomplete
+
+`RuleBuilder` fetches the contract WASM via Soroban RPC and parses its spec with `contract.Spec` to list exported functions. `FunctionCalled` and `AdminFunctionCalled` inputs offer a datalist of those names and warn when the entered name isn't in the spec. If the spec can't be loaded (contract not found, RPC error), the inputs fall back to free text.
 
 ### Stellar Expert links
 
