@@ -19,6 +19,46 @@ interface FormErrors {
   network?: string
 }
 
+interface ImportRowError {
+  line: number
+  message: string
+}
+
+interface ImportSummary {
+  imported: number
+  skipped: number
+  errors: ImportRowError[]
+}
+
+const VALID_NETWORKS: Network[] = ['testnet', 'mainnet', 'futurenet']
+const CSV_HEADER = ['contract_id', 'label', 'network', 'webhook_url']
+
+function parseCsvLine(line: string): string[] {
+  const cells: string[] = []
+  let current = ''
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { current += '"'; i++ }
+        else inQuotes = false
+      } else {
+        current += ch
+      }
+    } else if (ch === '"') {
+      inQuotes = true
+    } else if (ch === ',') {
+      cells.push(current)
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  cells.push(current)
+  return cells.map((c) => c.trim())
+}
+
 export default function NewContractPage() {
   const router = useRouter()
   const { isConnected, publicKey } = useFreighterConnection()
@@ -34,7 +74,10 @@ export default function NewContractPage() {
   const [testError, setTestError] = useState<string | null>(null)
   const [testStatusCode, setTestStatusCode] = useState<number | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null)
+  const [importing, setImporting] = useState(false)
   const testAbortRef = useRef<AbortController | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => () => testAbortRef.current?.abort(), [])
 
@@ -166,14 +209,150 @@ export default function NewContractPage() {
     }
   }
 
+  function handleImportClick() {
+    setImportSummary(null)
+    fileInputRef.current?.click()
+  }
+
+  async function handleCsvFile(file: File) {
+    if (!isConnected) {
+      setErrors((prev) => ({ ...prev, wallet: 'Connect your Freighter wallet to import contracts' }))
+      return
+    }
+    setImporting(true)
+    setImportSummary(null)
+    try {
+      const text = await file.text()
+      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
+      const rowErrors: ImportRowError[] = []
+      let imported = 0
+      let skipped = 0
+
+      if (lines.length === 0) {
+        setImportSummary({ imported: 0, skipped: 0, errors: [{ line: 0, message: 'CSV file is empty' }] })
+        return
+      }
+
+      const header = parseCsvLine(lines[0]).map((h) => h.toLowerCase())
+      const hasHeader = CSV_HEADER.every((col) => header.includes(col))
+      const colIndex: Record<string, number> = {}
+      if (hasHeader) {
+        CSV_HEADER.forEach((col) => { colIndex[col] = header.indexOf(col) })
+      } else {
+        CSV_HEADER.forEach((col, i) => { colIndex[col] = i })
+      }
+
+      const existing = getContracts()
+      const seen = new Set(existing.map((c) => `${c.contract_id}:${c.network}`))
+      const dataLines = hasHeader ? lines.slice(1) : lines
+
+      dataLines.forEach((line, idx) => {
+        const lineNumber = hasHeader ? idx + 2 : idx + 1
+        const cells = parseCsvLine(line)
+        const get = (col: string) => (cells[colIndex[col]] ?? '').trim()
+        const rowContractId = get('contract_id')
+        const rowLabel = get('label')
+        const rowNetwork = get('network').toLowerCase()
+        const rowWebhookUrl = get('webhook_url')
+
+        const rowIssues: string[] = []
+        if (!rowContractId) rowIssues.push('contract_id is required')
+        else if (!isValidContractId(rowContractId)) rowIssues.push('invalid contract_id')
+        if (!rowLabel) rowIssues.push('label is required')
+        if (!rowNetwork) rowIssues.push('network is required')
+        else if (!VALID_NETWORKS.includes(rowNetwork as Network)) rowIssues.push(`invalid network "${rowNetwork}"`)
+        if (!rowWebhookUrl) rowIssues.push('webhook_url is required')
+        else if (!isValidUrl(rowWebhookUrl)) rowIssues.push('invalid webhook_url')
+
+        if (rowIssues.length === 0) {
+          const key = `${rowContractId}:${rowNetwork}`
+          if (seen.has(key)) rowIssues.push('duplicate contract already registered')
+        }
+
+        if (rowIssues.length > 0) {
+          skipped++
+          rowErrors.push({ line: lineNumber, message: rowIssues.join('; ') })
+          return
+        }
+
+        const contract: WatchedContract = {
+          id: crypto.randomUUID(),
+          label: rowLabel,
+          contract_id: rowContractId,
+          network: rowNetwork as Network,
+          rules: [],
+          webhook_url: rowWebhookUrl,
+          created_at: Date.now(),
+        }
+        saveContract(contract)
+        seen.add(`${rowContractId}:${rowNetwork}`)
+        imported++
+      })
+
+      setImportSummary({ imported, skipped, errors: rowErrors })
+      setToast({
+        message: `${imported} contract${imported === 1 ? '' : 's'} imported, ${skipped} skipped`,
+        type: skipped > 0 ? 'error' : 'success',
+      })
+    } catch (err) {
+      setImportSummary({
+        imported: 0,
+        skipped: 0,
+        errors: [{ line: 0, message: err instanceof Error ? err.message : 'Failed to read CSV file' }],
+      })
+    } finally {
+      setImporting(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
   return (
     <>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <div className="max-w-2xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-100">Add Contract</h1>
-        <p className="text-sm text-zinc-500 mt-1">Register a Soroban contract to monitor</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-100">Add Contract</h1>
+          <p className="text-sm text-zinc-500 mt-1">Register a Soroban contract to monitor</p>
+        </div>
+        <div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) handleCsvFile(file)
+            }}
+          />
+          <button
+            type="button"
+            onClick={handleImportClick}
+            disabled={importing}
+            className="px-3 py-2 text-sm font-medium rounded-lg border border-zinc-700 text-zinc-200 hover:border-indigo-500 hover:text-indigo-300 transition-colors disabled:opacity-50"
+          >
+            {importing ? 'Importing…' : 'Import CSV'}
+          </button>
+        </div>
       </div>
+
+      {importSummary && (
+        <div className="rounded-lg border border-zinc-700 bg-zinc-900 p-4 space-y-2">
+          <p className="text-sm text-zinc-200">
+            {importSummary.imported} contract{importSummary.imported === 1 ? '' : 's'} imported, {importSummary.skipped} skipped
+          </p>
+          {importSummary.errors.length > 0 && (
+            <ul className="space-y-1">
+              {importSummary.errors.map((err, i) => (
+                <li key={i} className="text-xs text-red-400">
+                  {err.line > 0 ? `Row ${err.line}: ` : ''}{err.message}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="space-y-5">
         {/* Label */}
@@ -208,95 +387,8 @@ export default function NewContractPage() {
           <p className="mt-1.5 text-xs text-zinc-400">Soroban contract addresses start with <span className="font-mono">C</span> and are 56 characters long</p>
           {errors.contract_id && <p className="mt-1 text-xs text-red-400">{errors.contract_id}</p>}
         </div>
-
-        {/* Network */}
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">Network</label>
-          <select
-            value={network}
-            onChange={(e) => {
-              const newNetwork = e.target.value as Network
-              setNetwork(newNetwork)
-              checkNetworkMismatch(newNetwork)
-            }}
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
-          >
-            <option value="testnet">Testnet</option>
-            <option value="mainnet">Mainnet</option>
-            <option value="futurenet">Futurenet</option>
-          </select>
-          {networkWarning && (
-            <p className="mt-2 text-sm text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-3 py-2">
-              ⚠️ {networkWarning}
-            </p>
-          )}
-        </div>
-
-        {/* Webhook URL */}
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">Webhook URL</label>
-          <div className="flex gap-2">
-            <input
-              type="url"
-              placeholder="https://your-server.com/webhook"
-              value={webhookUrl}
-              onChange={(e) => { setWebhookUrl(e.target.value); setErrors((prev) => ({ ...prev, webhook_url: undefined })); setTestStatus('idle'); setTestStatusCode(null) }}
-              className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
-            />
-            <button
-              type="button"
-              onClick={handleTestWebhook}
-              disabled={testStatus === 'sending'}
-              className="px-3 py-2.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors disabled:opacity-50 whitespace-nowrap"
-            >
-              {testStatus === 'sending' ? 'Sending…' : testStatus === 'ok' ? `${testStatusCode} OK` : testStatus === 'error' ? `${testStatusCode ?? 'ERR'} Failed` : 'Test'}
-            </button>
-          </div>
-          <p className="mt-1.5 text-xs text-zinc-400">HTTP and HTTPS are supported. Example: <span className="font-mono">https://api.example.com/alerts</span></p>
-          {errors.webhook_url && <p className="mt-1 text-xs text-red-400">{errors.webhook_url}</p>}
-          {testStatus === 'error' && testError && <p className="mt-1 text-xs text-red-400">{testError}</p>}
-          {testStatus === 'ok' && <p className="mt-1 text-xs text-emerald-400">Test payload delivered — {testStatusCode} received</p>}
-        </div>
-
-        {/* Alert Rules */}
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">Alert Rules</label>
-          <RuleBuilder rules={rules} onChange={setRules} />
-          {errors.rules && <p className="mt-1 text-xs text-red-400">{errors.rules}</p>}
-        </div>
-
-        {/* Wallet Connection */}
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">Wallet</label>
-          <FreighterConnect onConnect={handleWalletConnect} />
-        </div>
-
-        {errors.wallet && (
-          <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
-            {errors.wallet}
-          </p>
-        )}
-
-        {/* Actions */}
-        <div className="flex items-center gap-3 pt-2">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || !isFormValid()}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium text-white transition-colors"
-          >
-            {saving ? 'Saving...' : 'Save Contract'}
-          </button>
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="px-4 py-2.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
       </div>
-    </div>
+      </div>
     </>
   )
 }
