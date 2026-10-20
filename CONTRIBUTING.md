@@ -49,6 +49,15 @@ chore: update deps
 
 All types live in `types/index.ts` and must stay in sync with the Rust structs in `stellar-txwatch-core`. Do not add fields here without a matching change in the core engine.
 
+## Architecture decisions
+
+Significant architectural decisions are recorded as ADRs in [`docs/adr/`](./docs/adr/README.md), using the MADR format. Read the existing ADRs before proposing changes in these areas:
+
+- [ADR-0001: localStorage-first storage with optional core API](./docs/adr/0001-localstorage-first-storage.md)
+- [ADR-0002: Freighter as the only supported wallet](./docs/adr/0002-freighter-only-wallet.md)
+
+If your change introduces or reverses an architectural decision, add a new ADR from [`docs/adr/template.md`](./docs/adr/template.md) in the same PR.
+
 ## Pull requests
 
 - Keep PRs focused - one feature or fix per PR
