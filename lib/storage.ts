@@ -182,6 +182,33 @@ export function deleteAlert(alertId: string) {
   save(ALERTS_KEY, alerts.filter((a) => a.id !== alertId))
 }
 
+/** Most recent alert timestamp per contract_id, computed in a single pass. */
+export function computeLastAlertTimes(alerts: AlertPayload[]): Record<string, number> {
+  const times: Record<string, number> = {}
+  for (const alert of alerts) {
+    const current = times[alert.contract_id]
+    if (current === undefined || alert.timestamp > current) {
+      times[alert.contract_id] = alert.timestamp
+    }
+  }
+  return times
+}
+
+// Keyed on the raw stored string so the alerts array is only re-parsed when it changes
+let lastAlertTimesCache: { raw: string | null; times: Record<string, number> } | null = null
+
+export function getLastAlertTimes(): Record<string, number> {
+  const storage = getStorage()
+  if (!storage) return {}
+  const raw = storage.getItem(ALERTS_KEY)
+  if (lastAlertTimesCache && lastAlertTimesCache.raw === raw) {
+    return lastAlertTimesCache.times
+  }
+  const times = computeLastAlertTimes(load(ALERTS_KEY, AlertPayloadSchema))
+  lastAlertTimesCache = { raw, times }
+  return times
+}
+
 export function getAllAlerts(): AlertPayload[] {
   return load(ALERTS_KEY, AlertPayloadSchema)
 }

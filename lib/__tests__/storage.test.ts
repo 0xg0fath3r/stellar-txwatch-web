@@ -5,6 +5,8 @@ import {
   saveAlert,
   getAlerts,
   deleteAlert,
+  addAlert,
+  getLastAlertTimes,
 } from '../storage';
 import {
   onStorageError,
@@ -212,5 +214,39 @@ describe('parse error reporting', () => {
     expect(received[0].key).toBe('txwatch_alerts');
     expect(received[0].rawValue).toBe('[{broken');
     expect(received[0].error).toBeInstanceOf(SyntaxError);
+  });
+});
+
+describe('getLastAlertTimes', () => {
+  it('returns an empty record when there are no alerts', () => {
+    expect(getLastAlertTimes()).toEqual({});
+  });
+
+  it('returns the most recent timestamp per contract in one pass', () => {
+    addAlert({ ...makeAlert('a1', 'c1'), timestamp: 100 });
+    addAlert({ ...makeAlert('a2', 'c1'), timestamp: 300 });
+    addAlert({ ...makeAlert('a3', 'c1'), timestamp: 200 });
+    addAlert({ ...makeAlert('b1', 'c2'), timestamp: 50 });
+    expect(getLastAlertTimes()).toEqual({ c1: 300, c2: 50 });
+  });
+
+  it('returns the memoised result while alerts are unchanged', () => {
+    addAlert({ ...makeAlert('a1', 'c1'), timestamp: 100 });
+    const parseSpy = vi.spyOn(JSON, 'parse');
+    const first = getLastAlertTimes();
+    const parsesAfterFirst = parseSpy.mock.calls.length;
+    const second = getLastAlertTimes();
+    expect(second).toBe(first);
+    expect(parseSpy.mock.calls.length).toBe(parsesAfterFirst);
+    parseSpy.mockRestore();
+  });
+
+  it('recomputes when alerts change', () => {
+    addAlert({ ...makeAlert('a1', 'c1'), timestamp: 100 });
+    const before = getLastAlertTimes();
+    addAlert({ ...makeAlert('a2', 'c1'), timestamp: 500 });
+    const after = getLastAlertTimes();
+    expect(after).not.toBe(before);
+    expect(after).toEqual({ c1: 500 });
   });
 });

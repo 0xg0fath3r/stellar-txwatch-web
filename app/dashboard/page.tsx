@@ -11,7 +11,7 @@ import { Network } from '@/types'
 export default function DashboardPage() {
   const { contracts, loading } = useContracts()
   const alertsToday = useTodayAlertCount()
-  const lastAlertTimes = useLastAlertTimes(contracts)
+  const lastAlertTimes = useLastAlertTimes()
 
   const activeWebhooks = contracts.filter((c) => c.webhook_url).length
   const networkCounts = contracts.reduce<Record<Network, number>>((counts, contract) => {

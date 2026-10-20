@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { AlertPayload, WatchedContract } from '@/types'
+import { AlertPayload } from '@/types'
 import { useStorageAdapter } from '@/lib/StorageContext'
 
 export function useAlerts(contractId: string | undefined) {
@@ -39,23 +39,19 @@ export function useTodayAlertCount() {
   return count
 }
 
-/** Timestamp of the most recent alert for each contract, keyed by contract_id. */
-export function useLastAlertTimes(contracts: WatchedContract[]) {
+/**
+ * Timestamp of the most recent alert for each contract, keyed by contract_id.
+ * Computed in one pass and only recomputed when alerts change.
+ */
+export function useLastAlertTimes() {
   const adapter = useStorageAdapter()
   const [times, setTimes] = useState<Record<string, number>>({})
 
   useEffect(() => {
     let cancelled = false
     const refresh = async () => {
-      const entries = await Promise.all(
-        contracts.map(async (c) => [c.contract_id, (await adapter.getAlerts(c.contract_id))[0]?.timestamp] as const)
-      )
-      if (cancelled) return
-      const next: Record<string, number> = {}
-      for (const [contractId, timestamp] of entries) {
-        if (timestamp !== undefined) next[contractId] = timestamp
-      }
-      setTimes(next)
+      const next = await adapter.getLastAlertTimes()
+      if (!cancelled) setTimes(next)
     }
     refresh()
     const unsubscribe = adapter.subscribe((change) => {
@@ -65,7 +61,7 @@ export function useLastAlertTimes(contracts: WatchedContract[]) {
       cancelled = true
       unsubscribe()
     }
-  }, [adapter, contracts])
+  }, [adapter])
 
   return times
 }

@@ -1,5 +1,6 @@
 import { WatchedContract, AlertPayload } from '@/types'
 import { StorageAdapter, StorageChange, StorageListener } from '@/lib/storageAdapter'
+import { computeLastAlertTimes } from '@/lib/storage'
 
 /**
  * Non-persistent StorageAdapter for tests and other environments without
@@ -8,6 +9,7 @@ import { StorageAdapter, StorageChange, StorageListener } from '@/lib/storageAda
 export class InMemoryStorageAdapter implements StorageAdapter {
   private contracts: WatchedContract[]
   private alerts: AlertPayload[]
+  private lastAlertTimes: Record<string, number> | null = null
   private listeners = new Set<StorageListener>()
 
   constructor(initial: { contracts?: WatchedContract[]; alerts?: AlertPayload[] } = {}) {
@@ -16,6 +18,7 @@ export class InMemoryStorageAdapter implements StorageAdapter {
   }
 
   private notify(change: StorageChange) {
+    if (change === 'alerts') this.lastAlertTimes = null
     this.listeners.forEach((listener) => listener(change))
   }
 
@@ -52,6 +55,11 @@ export class InMemoryStorageAdapter implements StorageAdapter {
 
   async getAllAlerts() {
     return this.alerts.map((a) => ({ ...a }))
+  }
+
+  async getLastAlertTimes() {
+    this.lastAlertTimes ??= computeLastAlertTimes(this.alerts)
+    return this.lastAlertTimes
   }
 
   async addAlert(alert: AlertPayload) {

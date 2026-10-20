@@ -6,6 +6,7 @@ import {
   deleteContract,
   getAlerts,
   getAllAlerts,
+  getLastAlertTimes,
   addAlert,
   getTodayAlertCount,
   onAlertsChange,
@@ -27,6 +28,8 @@ export interface StorageAdapter {
   deleteContract(id: string): Promise<void>
   getAlerts(contractId: string): Promise<AlertPayload[]>
   getAllAlerts(): Promise<AlertPayload[]>
+  /** Most recent alert timestamp per contract_id. */
+  getLastAlertTimes(): Promise<Record<string, number>>
   addAlert(alert: AlertPayload): Promise<void>
   getTodayAlertCount(): Promise<number>
   /** Notifies on any change to contracts or alerts. Returns an unsubscribe function. */
@@ -65,6 +68,10 @@ export class LocalStorageAdapter implements StorageAdapter {
 
   async getAllAlerts() {
     return getAllAlerts()
+  }
+
+  async getLastAlertTimes() {
+    return getLastAlertTimes()
   }
 
   async addAlert(alert: AlertPayload) {

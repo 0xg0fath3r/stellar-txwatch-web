@@ -96,6 +96,21 @@ describe.each(adapters)('%s', (_name, createAdapter) => {
     expect(await adapter.getAllAlerts()).toHaveLength(2)
   })
 
+  it('returns the most recent alert time per contract', async () => {
+    await adapter.addAlert(makeAlert({ timestamp: 100 }))
+    await adapter.addAlert(makeAlert({ timestamp: 300 }))
+    await adapter.addAlert(makeAlert({ contract_id: 'OTHER', timestamp: 200 }))
+    expect(await adapter.getLastAlertTimes()).toEqual({ CONTRACT_1: 300, OTHER: 200 })
+  })
+
+  it('reuses last alert times until alerts change', async () => {
+    await adapter.addAlert(makeAlert({ timestamp: 100 }))
+    const first = await adapter.getLastAlertTimes()
+    expect(await adapter.getLastAlertTimes()).toBe(first)
+    await adapter.addAlert(makeAlert({ timestamp: 400 }))
+    expect(await adapter.getLastAlertTimes()).toEqual({ CONTRACT_1: 400 })
+  })
+
   it("counts only today's alerts", async () => {
     await adapter.addAlert(makeAlert())
     await adapter.addAlert(makeAlert({ timestamp: new Date().setHours(0, 0, 0, 0) - 1 }))

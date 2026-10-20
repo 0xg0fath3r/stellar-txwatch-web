@@ -53,7 +53,7 @@ function sortContracts(contracts: WatchedContract[], sortBy: SortOption) {
 export default function ContractsPage() {
   const searchParams = useSearchParams()
   const { contracts: allContracts, loading } = useContracts()
-  const lastAlertTimes = useLastAlertTimes(allContracts)
+  const lastAlertTimes = useLastAlertTimes()
   const [networkFilter, setNetworkFilter] = useState<NetworkFilter>('all')
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [search, setSearch] = useState(() => searchParams?.get('q') ?? '')
