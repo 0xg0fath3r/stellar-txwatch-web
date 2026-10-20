@@ -13,6 +13,7 @@ import WebhookLog from '@/components/WebhookLog'
 import RuleBuilder from '@/components/RuleBuilder'
 import CopyButton from '@/components/CopyButton'
 import MetadataSection from '@/components/MetadataSection'
+import Button from '@/components/ui/Button'
 
 export default function ContractDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -158,15 +159,16 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
           <p className="text-sm text-zinc-400">
             The contract you&apos;re looking for doesn&apos;t exist or has been deleted.
           </p>
-          <button
+          <Button
             onClick={() => router.push('/contracts')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
+            variant="primary"
+            size="md"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
             Back to Contracts
-          </button>
+          </Button>
         </div>
       </div>
     )
@@ -196,24 +198,27 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
           </div>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-          <button
+          <Button
             onClick={openEditMetadata}
-            className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+            variant="secondary"
+            size="sm"
           >
             Edit Details
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={openEditRules}
-            className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+            variant="secondary"
+            size="sm"
           >
             Edit Rules
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => setShowDelete(true)}
-            className="px-3 py-1.5 rounded-lg border border-red-800 hover:border-red-600 text-sm text-red-400 hover:text-red-300 transition-colors"
+            variant="danger"
+            size="sm"
           >
             Delete
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -330,18 +335,22 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
             )}
 
             <div className="flex gap-3 pt-2">
-              <button
+              <Button
                 onClick={saveMetadata}
-                className="flex-1 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
+                variant="primary"
+                size="md"
+                className="flex-1"
               >
                 Save Changes
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={handleCancelMetadataEdit}
-                className="flex-1 px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+                variant="secondary"
+                size="md"
+                className="flex-1"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -365,18 +374,22 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
               </ul>
             </div>
             <div className="flex gap-3">
-              <button
+              <Button
                 onClick={handleDelete}
-                className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-sm font-medium text-white transition-colors"
+                variant="danger"
+                size="md"
+                className="flex-1"
               >
                 Delete
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => setShowDelete(false)}
-                className="flex-1 px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+                variant="secondary"
+                size="md"
+                className="flex-1"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -399,18 +412,22 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
             />
             {rulesError && <p className="text-xs text-red-400">{rulesError}</p>}
             <div className="flex gap-3 pt-2">
-              <button
+              <Button
                 onClick={saveRules}
-                className="flex-1 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
+                variant="primary"
+                size="md"
+                className="flex-1"
               >
                 Save Rules
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={handleCancelEdit}
-                className="flex-1 px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+                variant="secondary"
+                size="md"
+                className="flex-1"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -425,18 +442,22 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
               You have unsaved changes to your alert rules. Are you sure you want to discard them?
             </p>
             <div className="flex gap-3">
-              <button
+              <Button
                 onClick={confirmDiscard}
-                className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-sm font-medium text-white transition-colors"
+                variant="danger"
+                size="md"
+                className="flex-1"
               >
                 Discard
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => setShowUnsavedWarning(false)}
-                className="flex-1 px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+                variant="secondary"
+                size="md"
+                className="flex-1"
               >
                 Keep Editing
-              </button>
+              </Button>
             </div>
           </div>
         </div>

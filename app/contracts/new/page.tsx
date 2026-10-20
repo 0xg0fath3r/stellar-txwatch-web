@@ -9,6 +9,7 @@ import { sendTestWebhook } from '@/lib/api'
 import { useFreighterConnection } from '@/lib/useFreighterConnection'
 import RuleBuilder from '@/components/RuleBuilder'
 import FreighterConnect from '@/components/FreighterConnect'
+import Button from '@/components/ui/Button'
 
 interface FormErrors {
   label?: string
@@ -243,14 +244,16 @@ export default function NewContractPage() {
               onChange={(e) => { setWebhookUrl(e.target.value); setErrors((prev) => ({ ...prev, webhook_url: undefined })); setTestStatus('idle'); setTestStatusCode(null) }}
               className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
             />
-            <button
+            <Button
               type="button"
               onClick={handleTestWebhook}
-              disabled={testStatus === 'sending'}
-              className="px-3 py-2.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors disabled:opacity-50 whitespace-nowrap"
+              loading={testStatus === 'sending'}
+              variant="secondary"
+              size="lg"
+              className="whitespace-nowrap"
             >
               {testStatus === 'sending' ? 'Sending…' : testStatus === 'ok' ? `${testStatusCode} OK` : testStatus === 'error' ? `${testStatusCode ?? 'ERR'} Failed` : 'Test'}
-            </button>
+            </Button>
           </div>
           <p className="mt-1.5 text-xs text-zinc-400">HTTP and HTTPS are supported. Example: <span className="font-mono">https://api.example.com/alerts</span></p>
           {errors.webhook_url && <p className="mt-1 text-xs text-red-400">{errors.webhook_url}</p>}
@@ -279,21 +282,24 @@ export default function NewContractPage() {
 
         {/* Actions */}
         <div className="flex items-center gap-3 pt-2">
-          <button
+          <Button
             type="button"
             onClick={handleSave}
-            disabled={saving || !isFormValid()}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium text-white transition-colors"
+            disabled={!isFormValid()}
+            loading={saving}
+            variant="primary"
+            size="lg"
           >
             {saving ? 'Saving...' : 'Save Contract'}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             onClick={() => router.back()}
-            className="px-4 py-2.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+            variant="ghost"
+            size="lg"
           >
             Cancel
-          </button>
+          </Button>
         </div>
       </div>
     </div>
