@@ -21,6 +21,9 @@ const RULE_EXAMPLES: Record<AlertRuleType, string> = {
   'TransactionFailed': 'Alert on failed transactions',
 }
 
+const ALERT_RULES_DOC_URL =
+  'https://github.com/Tx-wat/stellar-txwatch-web/blob/main/docs/ALERT_RULES.md'
+
 interface RuleBuilderProps {
   rules: AlertRule[]
   onChange: (rules: AlertRule[]) => void
@@ -149,7 +152,17 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
-          <p className="text-xs text-zinc-500 mt-1">{RULE_EXAMPLES[draft.type]}</p>
+          <p className="text-xs text-zinc-500 mt-1">
+            {RULE_EXAMPLES[draft.type]}{' '}
+            <a
+              href={`${ALERT_RULES_DOC_URL}#${draft.type.toLowerCase()}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-indigo-400 hover:text-indigo-300 underline"
+            >
+              Learn more
+            </a>
+          </p>
         </div>
 
         {draft.type === 'LargeTransfer' && (
