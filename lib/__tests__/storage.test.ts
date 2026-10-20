@@ -6,6 +6,12 @@ import {
   getAlerts,
   deleteAlert,
 } from '../storage';
+import {
+  onStorageError,
+  clearStorageErrorHandlers,
+  StorageErrorContext,
+} from '../storageLogger';
+import { WatchedContract, AlertPayload, Network } from '@/types';
 
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -19,14 +25,43 @@ const localStorageMock = (() => {
 
 Object.defineProperty(global, 'localStorage', { value: localStorageMock });
 
-const contract1 = { id: 'c1', address: 'GABC...001', label: 'Contract Alpha', network: 'mainnet' };
-const contract2 = { id: 'c2', address: 'GDEF...002', label: 'Contract Beta',  network: 'testnet' };
+function makeContract(id: string, label: string, network: Network): WatchedContract {
+  return {
+    id,
+    label,
+    contract_id: `C-${id}`,
+    network,
+    rules: [],
+    webhook_url: '',
+    created_at: 0,
+    updated_at: 0,
+  };
+}
 
-const alert1 = { id: 'a1', contractId: 'c1', type: 'transfer', threshold: 100 };
-const alert2 = { id: 'a2', contractId: 'c1', type: 'invocation', threshold: 0 };
-const alert3 = { id: 'a3', contractId: 'c1', type: 'balance',   threshold: 500 };
+function makeAlert(id: string, contractId: string): AlertPayload {
+  return {
+    id,
+    label: `Alert ${id}`,
+    contract_id: contractId,
+    network: 'mainnet',
+    rule_triggered: 'AnyTransaction',
+    transaction_hash: `hash-${id}`,
+    timestamp: Date.now(),
+    horizon_link: `https://horizon.stellar.org/transactions/hash-${id}`,
+  };
+}
 
-beforeEach(() => localStorageMock.clear());
+const contract1 = makeContract('c1', 'Contract Alpha', 'mainnet');
+const contract2 = makeContract('c2', 'Contract Beta', 'testnet');
+
+const alert1 = makeAlert('a1', 'c1');
+const alert2 = makeAlert('a2', 'c1');
+const alert3 = makeAlert('a3', 'c1');
+
+beforeEach(() => {
+  localStorageMock.clear();
+  clearStorageErrorHandlers();
+});
 
 describe('saveContract / getContracts', () => {
   it('saves a contract and retrieves it', () => {
@@ -107,5 +142,57 @@ describe('deleteAlert', () => {
     const alerts = getAlerts('c1');
     expect(alerts).toHaveLength(1);
     expect(alerts[0].id).toBe('a2');
+  });
+});
+
+describe('schema validation of stored entries', () => {
+  it('drops contracts that do not match the schema and keeps valid ones', () => {
+    localStorage.setItem('txwatch_contracts', JSON.stringify([
+      contract1,
+      { id: 'broken', label: 'Missing fields' },
+      { ...contract2, network: 'devnet' },
+      null,
+    ]));
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(1);
+    expect(contracts[0].id).toBe('c1');
+  });
+
+  it('drops alerts that do not match the schema', () => {
+    localStorage.setItem('txwatch_alerts', JSON.stringify([
+      alert1,
+      { ...alert2, timestamp: 'yesterday' },
+      { id: 'a3', contractId: 'c1', type: 'transfer' },
+    ]));
+    expect(getAlerts('c1').map(a => a.id)).toEqual(['a1']);
+  });
+
+  it('drops contracts with malformed alert rules', () => {
+    localStorage.setItem('txwatch_contracts', JSON.stringify([
+      { ...contract1, rules: [{ type: 'NotARule' }] },
+    ]));
+    expect(getContracts()).toEqual([]);
+  });
+
+  it('reports each invalid entry through storageLogger', () => {
+    const received: StorageErrorContext[] = [];
+    onStorageError(ctx => received.push(ctx));
+    localStorage.setItem('txwatch_contracts', JSON.stringify([
+      contract1,
+      { id: 'broken' },
+      42,
+    ]));
+    getContracts();
+    expect(received).toHaveLength(2);
+    expect(received.every(ctx => ctx.key === 'txwatch_contracts')).toBe(true);
+  });
+
+  it('returns an empty list and reports when the stored value is not an array', () => {
+    const received: StorageErrorContext[] = [];
+    onStorageError(ctx => received.push(ctx));
+    localStorage.setItem('txwatch_alerts', JSON.stringify({ not: 'an array' }));
+    expect(getAlerts('c1')).toEqual([]);
+    expect(received).toHaveLength(1);
+    expect(received[0].key).toBe('txwatch_alerts');
   });
 });

@@ -1,4 +1,7 @@
+import { z } from 'zod'
 import { WatchedContract, AlertPayload, Network } from '@/types'
+import { WatchedContractSchema, AlertPayloadSchema } from '@/lib/schemas'
+import { emitStorageError } from '@/lib/storageLogger'
 
 const CONTRACTS_KEY = 'txwatch_contracts'
 const ALERTS_KEY = 'txwatch_alerts'
@@ -10,14 +13,43 @@ function getStorage(): Storage | undefined {
   return (globalThis as unknown as { localStorage?: Storage }).localStorage
 }
 
-function load<T>(key: string): T[] {
+function load<S extends z.ZodTypeAny>(key: string, schema: S): z.infer<S>[] {
   const storage = getStorage()
   if (!storage) return []
+  const raw = storage.getItem(key)
+  let parsed: unknown
   try {
-    return JSON.parse(storage.getItem(key) ?? '[]')
+    parsed = JSON.parse(raw ?? '[]')
   } catch {
     return []
   }
+
+  if (!Array.isArray(parsed)) {
+    emitStorageError({
+      key,
+      rawValue: raw,
+      error: new Error('Expected an array of entries'),
+      timestamp: new Date().toISOString(),
+    })
+    return []
+  }
+
+  // Drop malformed or outdated entries instead of letting them crash render
+  const valid: z.infer<S>[] = []
+  for (const entry of parsed) {
+    const result = schema.safeParse(entry)
+    if (result.success) {
+      valid.push(result.data)
+    } else {
+      emitStorageError({
+        key,
+        rawValue: JSON.stringify(entry) ?? null,
+        error: result.error,
+        timestamp: new Date().toISOString(),
+      })
+    }
+  }
+  return valid
 }
 
 const STORAGE_QUOTA_BYTES = 5 * 1024 * 1024 // 5MB typical limit
@@ -43,7 +75,7 @@ function pruneOldAlerts() {
   const storage = getStorage()
   if (!storage) return
   const cutoff = Date.now() - ALERTS_RETENTION_DAYS * 24 * 60 * 60 * 1000
-  const alerts = load<AlertPayload>(ALERTS_KEY)
+  const alerts = load(ALERTS_KEY, AlertPayloadSchema)
   const pruned = alerts.filter((a) => a.timestamp >= cutoff)
   if (pruned.length < alerts.length) {
     storage.setItem(ALERTS_KEY, JSON.stringify(pruned))
@@ -53,7 +85,7 @@ function pruneOldAlerts() {
 function trimAlertsToCutoff(cutoff: number) {
   const storage = getStorage()
   if (!storage) return
-  const alerts = load<AlertPayload>(ALERTS_KEY)
+  const alerts = load(ALERTS_KEY, AlertPayloadSchema)
   const trimmed = alerts.filter((a) => a.timestamp >= cutoff)
   if (trimmed.length < alerts.length) {
     storage.setItem(ALERTS_KEY, JSON.stringify(trimmed))
@@ -110,7 +142,7 @@ export function migrateStorage(migrations: Record<number, () => void>) {
 }
 
 export function getContracts(): WatchedContract[] {
-  return load<WatchedContract>(CONTRACTS_KEY)
+  return load(CONTRACTS_KEY, WatchedContractSchema)
 }
 
 export function getContract(id: string): WatchedContract | undefined {
@@ -146,17 +178,17 @@ export function deleteContract(id: string) {
 }
 
 export function deleteAlerts(contractId: string) {
-  const alerts = load<AlertPayload>(ALERTS_KEY)
+  const alerts = load(ALERTS_KEY, AlertPayloadSchema)
   save(ALERTS_KEY, alerts.filter((a) => a.contract_id !== contractId))
 }
 
 export function deleteAlert(alertId: string) {
-  const alerts = load<AlertPayload & { id?: string }>(ALERTS_KEY)
+  const alerts = load(ALERTS_KEY, AlertPayloadSchema)
   save(ALERTS_KEY, alerts.filter((a) => a.id !== alertId))
 }
 
 export function getAlerts(contractId: string): AlertPayload[] {
-  return load<AlertPayload>(ALERTS_KEY).filter(
+  return load(ALERTS_KEY, AlertPayloadSchema).filter(
     (a) => a.contract_id === contractId
   )
 }
@@ -186,7 +218,7 @@ export function seedMockAlerts(
     }
   })
 
-  save(ALERTS_KEY, [...alerts, ...load<AlertPayload>(ALERTS_KEY)])
+  save(ALERTS_KEY, [...alerts, ...load(ALERTS_KEY, AlertPayloadSchema)])
 }
 
 export function addAlert(alert: AlertPayload | (AlertPayload & { contractId?: string; id?: string })) {
@@ -194,7 +226,7 @@ export function addAlert(alert: AlertPayload | (AlertPayload & { contractId?: st
     ...alert,
     contract_id: alert.contract_id ?? (alert as { contractId?: string }).contractId,
   }
-  const all = [...load<AlertPayload>(ALERTS_KEY), normalizedAlert]
+  const all = [...load(ALERTS_KEY, AlertPayloadSchema), normalizedAlert]
   const counts: Record<string, number> = {}
   save(ALERTS_KEY, all.filter((a) => {
     counts[a.contract_id] = (counts[a.contract_id] ?? 0) + 1
@@ -203,7 +235,7 @@ export function addAlert(alert: AlertPayload | (AlertPayload & { contractId?: st
 }
 
 export function deleteAlertsByContractId(contractId: string) {
-  const alerts = load<AlertPayload>(ALERTS_KEY)
+  const alerts = load(ALERTS_KEY, AlertPayloadSchema)
   save(ALERTS_KEY, alerts.filter((a) => a.contract_id !== contractId))
 }
 
@@ -211,7 +243,7 @@ export const saveAlert = addAlert
 
 export function getTodayAlertCount(): number {
   const start = new Date().setHours(0, 0, 0, 0)
-  return load<AlertPayload>(ALERTS_KEY).filter((a) => a.timestamp >= start).length
+  return load(ALERTS_KEY, AlertPayloadSchema).filter((a) => a.timestamp >= start).length
 }
 
 export function onAlertsChange(callback: () => void): () => void {

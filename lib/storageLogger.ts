@@ -17,7 +17,7 @@ export function clearStorageErrorHandlers(): void {
   errorHandlers.length = 0;
 }
 
-function emitStorageError(ctx: StorageErrorContext): void {
+export function emitStorageError(ctx: StorageErrorContext): void {
   const isDev =
     typeof process !== 'undefined'
       ? process.env.NODE_ENV !== 'production'
