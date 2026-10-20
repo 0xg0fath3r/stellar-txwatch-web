@@ -63,11 +63,23 @@ components/
   CopyButton.tsx            # Clipboard copy utility
   MobileNav.tsx             # Mobile navigation drawer
   EmptyState.tsx            # Empty list placeholder
+  ContractListToolbar.tsx   # Contract list search/filter/sort controls
+  BulkActionBar.tsx         # Contract list bulk actions
+  ui/
+    Button.tsx              # Shared button with variants
+hooks/
+  useContracts.ts           # Contract state
+  useContractListState.ts   # Contract list search/filter/sort/pagination
+  useAlerts.ts              # Alert history per contract
+  useWallet.ts              # Wallet public key state
+  useFreighter.ts           # Freighter detection + connection
+  useFreighterConnection.ts # Freighter connection status
+  useAnalytics.ts           # Analytics trackEvent hook
+  useSortedLog.ts           # Timestamp-sorted log entries
 lib/
   stellar.ts                # Horizon + Soroban RPC helpers
   storage.ts                # localStorage contract registry
   api.ts                    # Fetch wrapper + test webhook
-  useContracts.ts           # React hook for contract state
 types/
   index.ts                  # Shared types (mirrors core Rust structs)
 ```

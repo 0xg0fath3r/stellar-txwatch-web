@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useContracts } from '@/lib/useContracts'
+import { useContracts } from '@/hooks/useContracts'
 import { getTodayAlertCount, getAlerts } from '@/lib/storage'
 import ContractCard from '@/components/ContractCard'
 import EmptyState from '@/components/EmptyState'
