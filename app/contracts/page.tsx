@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { WatchedContract, Network } from '@/types'
-import { getContracts, getAlerts } from '@/lib/storage'
+import { useContracts } from '@/lib/useContracts'
+import { useLastAlertTimes } from '@/lib/useAlerts'
 import ContractCard from '@/components/ContractCard'
 import EmptyState from '@/components/EmptyState'
 
@@ -51,20 +52,14 @@ function sortContracts(contracts: WatchedContract[], sortBy: SortOption) {
 
 export default function ContractsPage() {
   const searchParams = useSearchParams()
-  const [allContracts, setAllContracts] = useState<WatchedContract[]>([])
+  const { contracts: allContracts, loading } = useContracts()
+  const lastAlertTimes = useLastAlertTimes(allContracts)
   const [networkFilter, setNetworkFilter] = useState<NetworkFilter>('all')
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [search, setSearch] = useState(() => searchParams?.get('q') ?? '')
-  const [mounted, setMounted] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('flat')
   const [page, setPage] = useState(1)
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
-
-  useEffect(() => {
-    const all = getContracts()
-    setAllContracts(all)
-    setMounted(true)
-  }, [])
 
   // Check for a recently-created contract id in sessionStorage and highlight it once
   useEffect(() => {
@@ -129,7 +124,7 @@ export default function ContractsPage() {
     return groups
   }, [sorted])
 
-  if (!mounted) return null
+  if (loading) return null
 
   const hasAnyContracts = allContracts.length > 0
   const hasFilteredContracts = filtered.length > 0
@@ -302,7 +297,7 @@ export default function ContractsPage() {
                     <ContractCard
                       key={contract.id}
                       contract={contract}
-                      lastAlertTime={getAlerts(contract.contract_id)[0]?.timestamp}
+                      lastAlertTime={lastAlertTimes[contract.contract_id]}
                       highlight={highlightedId === contract.id}
                     />
                   ))}
@@ -318,7 +313,7 @@ export default function ContractsPage() {
               <ContractCard
                 key={contract.id}
                 contract={contract}
-                lastAlertTime={getAlerts(contract.contract_id)[0]?.timestamp}
+                lastAlertTime={lastAlertTimes[contract.contract_id]}
                 highlight={highlightedId === contract.id}
               />
             ))}

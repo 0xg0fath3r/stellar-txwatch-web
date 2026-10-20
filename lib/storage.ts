@@ -182,6 +182,10 @@ export function deleteAlert(alertId: string) {
   save(ALERTS_KEY, alerts.filter((a) => a.id !== alertId))
 }
 
+export function getAllAlerts(): AlertPayload[] {
+  return load(ALERTS_KEY, AlertPayloadSchema)
+}
+
 export function getAlerts(contractId: string): AlertPayload[] {
   return load(ALERTS_KEY, AlertPayloadSchema).filter(
     (a) => a.contract_id === contractId

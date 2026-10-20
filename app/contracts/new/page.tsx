@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertRule, Network, WatchedContract } from '@/types'
 import { isValidContractId, isValidUrl } from '@/lib/stellar'
-import { saveContract, getContracts } from '@/lib/storage'
+import { useContracts } from '@/lib/useContracts'
 import { sendTestWebhook } from '@/lib/api'
 import { useFreighterConnection } from '@/lib/useFreighterConnection'
 import RuleBuilder from '@/components/RuleBuilder'
@@ -22,6 +22,7 @@ interface FormErrors {
 export default function NewContractPage() {
   const router = useRouter()
   const { isConnected, publicKey } = useFreighterConnection()
+  const { contracts, add: addContract } = useContracts()
   const [networkWarning, setNetworkWarning] = useState<string | null>(null)
   const [label, setLabel] = useState('')
   const [contractId, setContractId] = useState('')
@@ -53,7 +54,7 @@ export default function NewContractPage() {
     else if (!isValidContractId(trimmedContractId)) e.contract_id = 'Must be a valid Soroban contract address (starts with C, 56 chars)'
     else {
       // Check for duplicate contract_id + network combination
-      const isDuplicate = getContracts().some(
+      const isDuplicate = contracts.some(
         (c) => c.contract_id === trimmedContractId && c.network === network
       )
       if (isDuplicate) e.contract_id = `This contract is already registered on ${network}`
@@ -121,7 +122,7 @@ export default function NewContractPage() {
       webhook_url: webhookUrl.trim(),
       created_at: Date.now(),
     }
-    saveContract(contract)
+    await addContract(contract)
     try {
       sessionStorage.setItem('txwatch_last_created_contract', contract.id)
     } catch {

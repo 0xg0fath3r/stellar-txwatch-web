@@ -4,6 +4,7 @@ import Link from 'next/link'
 import FreighterConnect from '@/components/FreighterConnect'
 import WalletStatusBadge from '@/components/WalletStatusBadge'
 import MobileNav from '@/components/MobileNav'
+import { StorageProvider } from '@/lib/StorageContext'
 
 export const metadata: Metadata = {
   title: 'TxWatch — Soroban Contract Monitoring',
@@ -45,7 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </header>
 
         <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
-          {children}
+          <StorageProvider>{children}</StorageProvider>
         </main>
       </body>
     </html>

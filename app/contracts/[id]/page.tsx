@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { WatchedContract, AlertPayload, AlertRule } from '@/types'
-import { getContract, deleteContract, getAlerts, saveContract } from '@/lib/storage'
+import { AlertRule } from '@/types'
+import { useContract } from '@/lib/useContracts'
+import { useAlerts } from '@/lib/useAlerts'
 import { truncateId, explorerContractUrl, isValidUrl } from '@/lib/stellar'
 import { formatDate, formatRuleSummary } from '@/lib/format'
 import { useAnalytics } from '@/lib/useAnalytics'
@@ -17,10 +18,8 @@ import MetadataSection from '@/components/MetadataSection'
 export default function ContractDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const { trackEvent } = useAnalytics()
-  const [contract, setContract] = useState<WatchedContract | null>(null)
-  const [alerts, setAlerts] = useState<AlertPayload[]>([])
-  const [mounted, setMounted] = useState(false)
-  const [contractNotFound, setContractNotFound] = useState(false)
+  const { contract, loading, notFound: contractNotFound, save: saveContract, remove } = useContract(params.id)
+  const { alerts } = useAlerts(contract?.contract_id)
   const [showDelete, setShowDelete] = useState(false)
   const [showEditRules, setShowEditRules] = useState(false)
   const [editedRules, setEditedRules] = useState<AlertRule[]>([])
@@ -33,20 +32,8 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   const [editedWebhookUrl, setEditedWebhookUrl] = useState('')
   const [metadataError, setMetadataError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const c = getContract(params.id)
-    if (!c) { 
-      setContractNotFound(true)
-      setMounted(true)
-      return 
-    }
-    setContract(c)
-    setAlerts(getAlerts(params.id))
-    setMounted(true)
-  }, [params.id, router])
-
-  function handleDelete() {
-    deleteContract(params.id)
+  async function handleDelete() {
+    await remove()
     router.push('/contracts')
   }
 
@@ -61,7 +48,6 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
     if (editedRules.length === 0) { setRulesError('Add at least one rule'); return }
     const updated = { ...contract!, rules: editedRules }
     saveContract(updated)
-    setContract(updated)
     setShowEditRules(false)
     trackEvent('rule_edit_saved', { contractId: params.id, ruleCount: editedRules.length })
   }
@@ -124,7 +110,6 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
       webhook_url: trimmedWebhookUrl
     }
     saveContract(updated)
-    setContract(updated)
     setShowEditMetadata(false)
     trackEvent('metadata_edit_saved', { contractId: params.id })
   }
@@ -143,7 +128,7 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
     }
   }
 
-  if (!mounted) return null
+  if (loading) return null
 
   if (contractNotFound) {
     return (
