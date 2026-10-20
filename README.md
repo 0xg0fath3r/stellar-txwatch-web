@@ -102,9 +102,49 @@ See [Stellar integration](#stellar-integration) for implementation details.
 
 ## Environment variables
 
-| Variable | Description |
+| Variable | Description | Required |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | Base URL of the txwatch-core API. Empty string defaults to local/mock mode | Optional |
+
+### `NEXT_PUBLIC_API_URL` fallback behaviour
+
+- **Set to a valid URL** (e.g. `https://api.example.com`): The app connects to the running `stellar-txwatch-core` backend for contract sync and webhook delivery monitoring.
+- **Set to empty string** (or unset): The app runs in **mock/local mode**. Contracts and alert rules are stored in `localStorage`. Webhook testing uses mock payloads. No real-time monitoring occurs.
+- **Note**: The value is read at runtime via `process.env.NEXT_PUBLIC_API_URL ?? ''` in `lib/api.ts`. Even if a URL is set, if the backend is not running, API calls will fail with HTTP errors.
+
+## API error codes
+
+The backend (`stellar-txwatch-core`) may return the following HTTP error codes:
+
+| Code | Meaning |
 |---|---|
-| `NEXT_PUBLIC_API_URL` | Base URL of the txwatch-core API (optional) |
+| **400** | Bad request — invalid payload or parameters sent to the API |
+| **401** | Unauthorized — missing or invalid authentication credentials |
+| **404** | Not found — requested resource (contract, rule, etc.) does not exist |
+| **422** | Unprocessable entity — valid request but invalid data (e.g., rule configuration error) |
+| **500** | Internal server error — unexpected condition in the backend |
+
+### Example error response
+
+```json
+{
+  "error": "invalid_payload",
+  "message": "Contract ID must start with C and be 56 base-32 characters"
+}
+```
+
+### How `apiFetch` extracts the error message
+
+When the backend returns a non-2xx status, `apiFetch` in `lib/api.ts` performs the following:
+
+1. Reads the response body as text
+2. Attempts to parse it as JSON
+3. Extracts `body.message` or `body.error` if present
+4. Falls back to the raw text if JSON parsing fails or those fields are absent
+5. Throws a `Error` with the extracted message
+
+This ensures that user-facing error messages are meaningful even when the backend returns structured error responses.
+```
 
 ## Stellar integration
 
