@@ -79,6 +79,7 @@ hooks/
 lib/
   stellar.ts                # Horizon + Soroban RPC helpers
   storage.ts                # localStorage contract registry
+  storageKeys.ts            # All browser storage key names
   api.ts                    # Fetch wrapper + test webhook
 types/
   index.ts                  # Shared types (mirrors core Rust structs)

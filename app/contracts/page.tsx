@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { WatchedContract, Network } from '@/types'
 import { getContracts, getAlerts, deleteContract } from '@/lib/storage'
+import { STORAGE_KEYS } from '@/lib/storageKeys'
 import { useContractListState } from '@/hooks/useContractListState'
 import ContractCard from '@/components/ContractCard'
 import ContractListToolbar from '@/components/ContractListToolbar'
@@ -32,10 +33,10 @@ export default function ContractsPage() {
   // Check for a recently-created contract id in sessionStorage and highlight it once
   useEffect(() => {
     try {
-      const id = sessionStorage.getItem('txwatch_last_created_contract')
+      const id = sessionStorage.getItem(STORAGE_KEYS.LAST_CREATED_CONTRACT)
       if (id) {
         setHighlightedId(id)
-        sessionStorage.removeItem('txwatch_last_created_contract')
+        sessionStorage.removeItem(STORAGE_KEYS.LAST_CREATED_CONTRACT)
         const t = setTimeout(() => setHighlightedId(null), 6000)
         return () => clearTimeout(t)
       }

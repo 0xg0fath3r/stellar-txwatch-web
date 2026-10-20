@@ -40,6 +40,7 @@ This document maps key files and directories to their functional areas, helping 
 | `stellar.ts` | Stellar integration — Horizon URLs, Soroban RPC, contract validation, explorer links |
 | `storage.ts` | localStorage persistence — contract registry, settings, cache |
 | `api.ts` | Backend communication — fetch wrapper, webhook test, API calls |
+| `storageKeys.ts` | Single source of truth for every localStorage / sessionStorage key |
 
 ### `/hooks` — React Hooks
 

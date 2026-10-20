@@ -1,3 +1,5 @@
+import { STORAGE_KEYS } from '@/lib/storageKeys';
+
 export interface ContractExportSnapshot {
   version: 1;
   exportedAt: string;
@@ -25,7 +27,7 @@ function readContractsFromStorage(storageKey: string): StoredContractExport[] {
 }
 
 export function buildContractSnapshot(
-  storageKey = 'txwatch:contracts',
+  storageKey: string = STORAGE_KEYS.CONTRACTS,
 ): ContractExportSnapshot {
   const contracts = readContractsFromStorage(storageKey);
   return {

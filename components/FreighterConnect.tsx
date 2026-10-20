@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { STORAGE_KEYS } from '@/lib/storageKeys'
 
 declare global {
   interface Window {
@@ -13,7 +14,7 @@ declare global {
   }
 }
 
-const WALLET_STORAGE_KEY = 'freighter_public_key'
+const WALLET_STORAGE_KEY = STORAGE_KEYS.FREIGHTER_PUBLIC_KEY
 
 interface FreighterConnectProps {
   className?: string

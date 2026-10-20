@@ -3,6 +3,7 @@ import {
   exportContractsAsJson,
   parseContractSnapshot,
 } from '../exportStorage';
+import { STORAGE_KEYS } from '../storageKeys';
 
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -15,7 +16,7 @@ const localStorageMock = (() => {
 })();
 Object.defineProperty(global, 'localStorage', { value: localStorageMock });
 
-const KEY = 'txwatch:contracts';
+const KEY = STORAGE_KEYS.CONTRACTS;
 const sample = [
   { id: 'c1', address: 'GABC', label: 'Alpha', network: 'mainnet' },
   { id: 'c2', address: 'GDEF', label: 'Beta',  network: 'testnet' },

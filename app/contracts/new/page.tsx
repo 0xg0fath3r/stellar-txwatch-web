@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { AlertRule, Network, WatchedContract } from '@/types'
 import { isValidContractId, isValidUrl } from '@/lib/stellar'
 import { saveContract, getContracts } from '@/lib/storage'
+import { STORAGE_KEYS } from '@/lib/storageKeys'
 import { sendTestWebhook } from '@/lib/api'
 import { useFreighterConnection } from '@/hooks/useFreighterConnection'
 import RuleBuilder from '@/components/RuleBuilder'
@@ -124,7 +125,7 @@ export default function NewContractPage() {
     }
     saveContract(contract)
     try {
-      sessionStorage.setItem('txwatch_last_created_contract', contract.id)
+      sessionStorage.setItem(STORAGE_KEYS.LAST_CREATED_CONTRACT, contract.id)
     } catch {
       // ignore storage errors
     }
