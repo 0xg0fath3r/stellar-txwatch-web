@@ -196,3 +196,21 @@ describe('schema validation of stored entries', () => {
     expect(received[0].key).toBe('txwatch_alerts');
   });
 });
+
+describe('parse error reporting', () => {
+  it('returns an empty list for malformed JSON', () => {
+    localStorage.setItem('txwatch_contracts', '{not valid json');
+    expect(getContracts()).toEqual([]);
+  });
+
+  it('triggers registered storage error handlers on malformed JSON', () => {
+    const received: StorageErrorContext[] = [];
+    onStorageError(ctx => received.push(ctx));
+    localStorage.setItem('txwatch_alerts', '[{broken');
+    expect(getAlerts('c1')).toEqual([]);
+    expect(received).toHaveLength(1);
+    expect(received[0].key).toBe('txwatch_alerts');
+    expect(received[0].rawValue).toBe('[{broken');
+    expect(received[0].error).toBeInstanceOf(SyntaxError);
+  });
+});

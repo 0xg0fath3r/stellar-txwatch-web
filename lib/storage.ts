@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { WatchedContract, AlertPayload, Network } from '@/types'
 import { WatchedContractSchema, AlertPayloadSchema } from '@/lib/schemas'
-import { emitStorageError } from '@/lib/storageLogger'
+import { emitStorageError, safeParseStorage } from '@/lib/storageLogger'
 
 const CONTRACTS_KEY = 'txwatch_contracts'
 const ALERTS_KEY = 'txwatch_alerts'
@@ -16,18 +16,13 @@ function getStorage(): Storage | undefined {
 function load<S extends z.ZodTypeAny>(key: string, schema: S): z.infer<S>[] {
   const storage = getStorage()
   if (!storage) return []
-  const raw = storage.getItem(key)
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw ?? '[]')
-  } catch {
-    return []
-  }
+  // Parse errors are reported to registered handlers by safeParseStorage
+  const parsed = safeParseStorage<unknown>(key, [], storage)
 
   if (!Array.isArray(parsed)) {
     emitStorageError({
       key,
-      rawValue: raw,
+      rawValue: storage.getItem(key),
       error: new Error('Expected an array of entries'),
       timestamp: new Date().toISOString(),
     })
