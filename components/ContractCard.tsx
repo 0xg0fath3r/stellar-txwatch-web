@@ -10,9 +10,10 @@ interface ContractCardProps {
   contract: WatchedContract
   lastAlertTime?: number
   highlight?: boolean
+  missing?: boolean
 }
 
-export default function ContractCard({ contract, lastAlertTime, highlight }: ContractCardProps) {
+export default function ContractCard({ contract, lastAlertTime, highlight, missing }: ContractCardProps) {
   const hasWebhook = Boolean(contract.webhook_url)
   const ttlWarning = getTtlWarning(contract.instance_live_until_ledger_seq)
   const [active, setActive] = useState(highlight)
@@ -29,7 +30,7 @@ export default function ContractCard({ contract, lastAlertTime, highlight }: Con
       href={`/contracts/${contract.id}`}
       className={`block bg-zinc-900 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 hover:bg-zinc-800/60 transition-all group ${
         active ? 'ring-2 ring-indigo-500/40 animate-pulse' : ''
-      }`}
+      } ${missing ? 'opacity-60' : ''}`}
     >
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
@@ -40,7 +41,17 @@ export default function ContractCard({ contract, lastAlertTime, highlight }: Con
             {truncateId(contract.contract_id)}
           </p>
         </div>
-        <NetworkBadge network={contract.network} />
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          <NetworkBadge network={contract.network} />
+          {missing && (
+            <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-red-500/15 text-red-400 border border-red-500/20">
+              <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Not found — network may have been reset</span>
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Instance TTL warning indicator */}
