@@ -9,6 +9,7 @@ import { sendTestWebhook } from '@/lib/api'
 import { useFreighterConnection } from '@/lib/useFreighterConnection'
 import RuleBuilder from '@/components/RuleBuilder'
 import FreighterConnect from '@/components/FreighterConnect'
+import Toast from '@/components/Toast'
 
 interface FormErrors {
   label?: string
@@ -64,22 +65,6 @@ export default function NewContractPage() {
     else if (!isValidUrl(trimmedWebhookUrl)) e.webhook_url = 'Must be a valid http/https URL'
     if (rules.length === 0) e.rules = 'Add at least one alert rule'
     return e
-  }
-
-  function isFormValid(): boolean {
-    return (
-      label.trim().length > 0 &&
-      label.length <= 100 &&
-      contractId.trim().length > 0 &&
-      isValidContractId(contractId.trim()) &&
-      webhookUrl.trim().length > 0 &&
-      isValidUrl(webhookUrl.trim()) &&
-      rules.length > 0
-    )
-  }
-
-  function isWalletConnected(): boolean {
-    return isConnected && !!publicKey
   }
 
   async function checkNetworkMismatch(selectedNetwork: Network) {
@@ -308,7 +293,7 @@ export default function NewContractPage() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || !isFormValid()}
+            disabled={saving}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium text-white transition-colors"
           >
             {saving ? 'Saving...' : 'Save Contract'}
