@@ -13,6 +13,8 @@ export default function DashboardPage() {
   const alertsToday = useTodayAlertCount()
   const lastAlertTimes = useLastAlertTimes()
 
+  const activeContracts = contracts.filter((c) => c.enabled).length
+  const pausedContracts = contracts.length - activeContracts
   const activeWebhooks = contracts.filter((c) => c.webhook_url).length
   const networkCounts = contracts.reduce<Record<Network, number>>((counts, contract) => {
     counts[contract.network] = (counts[contract.network] ?? 0) + 1
@@ -44,8 +46,22 @@ export default function DashboardPage() {
 
       {/* Stats bar */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <Link href="/contracts" className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 transition-colors">
+          <p className="text-2xl font-bold text-zinc-100">{contracts.length}</p>
+          <p className="text-xs text-zinc-500 mt-1">Contracts Watched</p>
+          <div className="mt-4 flex items-center gap-4 text-xs">
+            <span className="inline-flex items-center gap-1.5 text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              {activeContracts} active
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-zinc-500">
+              <span className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
+              {pausedContracts} paused
+            </span>
+          </div>
+        </Link>
+
         {[
-          { label: 'Contracts Watched', value: contracts.length, href: '/contracts' },
           { label: 'Alerts Today', value: alertsToday, href: '/contracts?filter=alerts' },
           { label: 'Active Webhooks', value: activeWebhooks, href: '/contracts?filter=webhooks' },
         ].map((stat) => (

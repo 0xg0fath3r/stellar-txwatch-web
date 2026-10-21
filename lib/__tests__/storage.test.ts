@@ -1,18 +1,19 @@
+import { vi } from 'vitest';
 import {
   saveContract,
   deleteContract,
+  restoreContract,
   getContracts,
+  getContract,
   saveAlert,
+  addAlert,
   getAlerts,
   deleteAlert,
-  addAlert,
-  getLastAlertTimes,
+  deleteAlerts,
+  deleteAlertsByContractId,
+  migrateStorage,
+  getNetworkDistribution,
 } from '../storage';
-import {
-  onStorageError,
-  clearStorageErrorHandlers,
-  StorageErrorContext,
-} from '../storageLogger';
 import { WatchedContract, AlertPayload, Network } from '@/types';
 
 const localStorageMock = (() => {
@@ -22,8 +23,45 @@ const localStorageMock = (() => {
     setItem:   (key: string, value: string) => { store[key] = value; },
     removeItem:(key: string) => { delete store[key]; },
     clear:     () => { store = {}; },
+    get length() { return Object.keys(store).length; },
+    key:       (i: number) => Object.keys(store)[i] ?? null,
   };
 })();
+
+const CONTRACTS_KEY = 'txwatch_contracts';
+const ALERTS_KEY = 'txwatch_alerts';
+const VERSION_KEY = 'txwatch_storage_version';
+
+function makeContract(overrides: Partial<WatchedContract> = {}): WatchedContract {
+  return {
+    id: 'c1',
+    label: 'Test Contract',
+    contract_id: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA7',
+    network: 'testnet',
+    rules: [],
+    webhook_url: '',
+    created_at: 1000,
+    updated_at: 1000,
+    ...overrides,
+  };
+}
+
+function makeAlert(overrides: Partial<AlertPayload> = {}): AlertPayload {
+  return {
+    label: 'Alert',
+    contract_id: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA7',
+    network: 'testnet',
+    rule_triggered: 'AnyTransaction',
+    transaction_hash: 'tx',
+    timestamp: Date.now(),
+    horizon_link: 'https://horizon-testnet.stellar.org/transactions/tx',
+    ...overrides,
+  };
+}
+
+function readRaw<T>(key: string): T {
+  return JSON.parse(localStorageMock.getItem(key) ?? '[]');
+}
 
 Object.defineProperty(global, 'localStorage', { value: localStorageMock });
 
@@ -104,6 +142,67 @@ describe('deleteContract', () => {
     saveContract(contract1);
     deleteContract('c1');
     expect(getContracts()).toEqual([]);
+  });
+});
+
+describe('enabled flag defaults', () => {
+  it('defaults enabled to true when saving a contract without the flag', () => {
+    saveContract(contract1);
+    expect(getContracts()[0].enabled).toBe(true);
+  });
+
+  it('preserves an explicit enabled: false on save', () => {
+    saveContract({ ...contract1, enabled: false });
+    expect(getContracts()[0].enabled).toBe(false);
+  });
+
+  it('migrates legacy stored contracts without enabled to enabled: true', () => {
+    localStorageMock.setItem(
+      'watched_contracts',
+      JSON.stringify([{ ...contract1 }, { ...contract2, enabled: false }]),
+    );
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(2);
+    expect(contracts[0].enabled).toBe(true);
+    expect(contracts[1].enabled).toBe(false);
+  });
+});
+
+describe('restoreContract', () => {
+  it('restores a deleted contract exactly', () => {
+    saveContract(contract1);
+    saveContract(contract2);
+    const snapshot = getContracts().find(c => c.id === 'c1');
+    deleteContract('c1');
+    restoreContract(snapshot);
+    const restored = getContracts().find(c => c.id === 'c1');
+    expect(restored).toEqual(snapshot);
+    expect(getContracts()).toHaveLength(2);
+  });
+
+  it('restores a contract with enabled: false preserved', () => {
+    saveContract({ ...contract1, enabled: false });
+    const snapshot = getContracts()[0];
+    deleteContract('c1');
+    restoreContract(snapshot);
+    expect(getContracts()[0].enabled).toBe(false);
+  });
+
+  it('restores multiple contracts for bulk undo', () => {
+    saveContract(contract1);
+    saveContract(contract2);
+    const snapshots = getContracts();
+    deleteContract('c1');
+    deleteContract('c2');
+    expect(getContracts()).toEqual([]);
+    snapshots.forEach(c => restoreContract(c));
+    expect(getContracts().map(c => c.id)).toEqual(['c1', 'c2']);
+  });
+
+  it('does not duplicate when restoring an existing contract', () => {
+    saveContract(contract1);
+    restoreContract(getContracts()[0]);
+    expect(getContracts()).toHaveLength(1);
   });
 });
 

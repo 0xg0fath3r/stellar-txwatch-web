@@ -11,7 +11,22 @@ import {
 // single source of truth for both compile-time types and runtime validation.
 export type Network = z.infer<typeof NetworkSchema>
 
-export type AlertRuleType = z.infer<typeof AlertRuleTypeSchema>
+export type ExplorerId = 'stellar-expert' | 'stellarchain' | 'horizon'
+
+export interface AppSettings {
+  explorer: ExplorerId
+}
+
+export interface AlertRule {
+  type: AlertRuleType
+  /** Optional user-supplied label for this rule (max 60 characters). */
+  name?: string
+  threshold_xlm?: number
+  asset?: string
+  threshold?: number
+  function_names?: string[]
+  function_name?: string
+}
 
 export interface WatchedContract {
   id: string
@@ -23,6 +38,7 @@ export interface WatchedContract {
   webhook_secret?: string
   created_at: number
   updated_at: number
+  instanceLiveUntilLedgerSeq?: number
 }
 
 export interface AlertPayload {
@@ -30,6 +46,8 @@ export interface AlertPayload {
   contract_id: string
   network: string
   rule_triggered: string
+  /** Optional rule name echoed by the core engine (mirrors AlertRule.name). */
+  rule_name?: string
   transaction_hash: string
   function_name?: string
   amount?: number

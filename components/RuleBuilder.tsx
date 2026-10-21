@@ -50,9 +50,28 @@ interface RuleBuilderProps {
   /** Optional callback fired whenever a rule is added, updated, or removed.
    *  Intended as an analytics hook point — no behavior depends on it. */
   onRulesChanged?: (rules: AlertRule[], action: 'add' | 'update' | 'remove') => void
+  /** Exported function names parsed from the contract spec. When null/empty,
+   *  function name inputs fall back to plain free text. */
+  exportedFunctions?: string[] | null
 }
 
 const emptyRule = (): AlertRule => ({ type: 'AnyTransaction' })
+
+const SAC_CONTRACT_ID_REGEX = /^C[A-Z2-7]{55}$/
+
+/** Fetches the number of decimals for a token contract via its `decimals()` function.
+ *  Returns null when the value cannot be determined. */
+async function fetchTokenDecimals(asset: string): Promise<number | null> {
+  try {
+    const res = await fetch(`/api/token-decimals?asset=${encodeURIComponent(asset)}`)
+    if (!res.ok) return null
+    const data = await res.json()
+    const decimals = Number(data?.decimals)
+    return Number.isInteger(decimals) && decimals >= 0 ? decimals : null
+  } catch {
+    return null
+  }
+}
 
 export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBuilderProps) {
   const [draft, setDraft] = useState<AlertRule>(emptyRule())
@@ -68,6 +87,29 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
     setTemplates(loadTemplates())
   }, [])
 
+  const specFunctions = exportedFunctions ?? []
+  const hasSpec = specFunctions.length > 0
+  const specFunctionSet = new Set(specFunctions)
+  const datalistId = 'rule-builder-function-names'
+
+  function unknownFunctionNames(): string[] {
+    if (!hasSpec) return []
+    if (draft.type === 'FunctionCalled') {
+      const name = draft.function_name?.trim()
+      return name && !specFunctionSet.has(name) ? [name] : []
+    }
+    if (draft.type === 'AdminFunctionCalled') {
+      return (draft.function_names ?? []).filter((name) => name && !specFunctionSet.has(name))
+    }
+    return []
+  }
+
+  const unknownNames = unknownFunctionNames()
+  const specWarning =
+    unknownNames.length > 0
+      ? `Function not found in contract spec — rule may never fire: ${unknownNames.join(', ')}`
+      : null
+
   function updateDraft(patch: Partial<AlertRule>) {
     setDraft((prev) => ({ ...prev, ...patch }))
     setError(null)
@@ -75,15 +117,55 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
   }
 
   function handleTypeChange(type: AlertRuleType) {
-    setDraft({ type })
+    setDraft((prev) => ({ type, name: prev.name }))
     setError(null)
     setWarning(null)
+    setTokenDecimals(null)
+    setDecimalsError(null)
+    setDecimalsLoading(false)
+  }
+
+  async function handleAssetChange(asset: string) {
+    const trimmed = asset.trim()
+    updateDraft({ asset: trimmed || undefined })
+    setTokenDecimals(null)
+    setDecimalsError(null)
+    if (!trimmed) {
+      setDecimalsLoading(false)
+      return
+    }
+    if (!SAC_CONTRACT_ID_REGEX.test(trimmed)) {
+      setDecimalsError('Enter a valid token contract ID (starts with C, 56 characters)')
+      setDecimalsLoading(false)
+      return
+    }
+    setDecimalsLoading(true)
+    const decimals = await fetchTokenDecimals(trimmed)
+    // Ignore stale responses if the asset changed while fetching.
+    setDraft((prev) => {
+      if (prev.asset !== trimmed) return prev
+      setDecimalsLoading(false)
+      if (decimals === null) {
+        setDecimalsError('Could not fetch token decimals for this contract')
+        setTokenDecimals(null)
+      } else {
+        setDecimalsError(null)
+        setTokenDecimals(decimals)
+      }
+      return prev
+    })
   }
 
   function isDuplicateLabel(newRule: AlertRule): boolean {
     return rules.some((rule) => {
       if (newRule.type !== rule.type) return false
-      if (newRule.type === 'LargeTransfer') return newRule.threshold_xlm === rule.threshold_xlm
+      if (newRule.type === 'LargeTransfer') {
+        return (
+          (newRule.asset ?? null) === (rule.asset ?? null) &&
+          (newRule.asset ? newRule.threshold : newRule.threshold_xlm) ===
+            (rule.asset ? rule.threshold : rule.threshold_xlm)
+        )
+      }
       if (newRule.type === 'FunctionCalled') return newRule.function_name === rule.function_name
       if (newRule.type === 'AdminFunctionCalled') {
         const newNames = (newRule.function_names ?? []).sort().join(',')
@@ -99,14 +181,37 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
   }
 
   function addRule() {
+    if (draft.name && draft.name.length > 60) {
+      setError('Rule name must be 60 characters or fewer')
+      return
+    }
     if (draft.type === 'LargeTransfer') {
-      if (draft.threshold_xlm === undefined || draft.threshold_xlm === null || isNaN(draft.threshold_xlm)) {
-        setError('Enter a valid XLM threshold')
-        return
-      }
-      if (draft.threshold_xlm <= 0) {
-        setError('Threshold must be greater than 0')
-        return
+      if (draft.asset) {
+        if (!SAC_CONTRACT_ID_REGEX.test(draft.asset)) {
+          setError('Enter a valid token contract ID (starts with C, 56 characters)')
+          return
+        }
+        if (decimalsError) {
+          setError(decimalsError)
+          return
+        }
+        if (draft.threshold === undefined || draft.threshold === null || isNaN(draft.threshold)) {
+          setError('Enter a valid token threshold')
+          return
+        }
+        if (draft.threshold <= 0) {
+          setError('Threshold must be greater than 0')
+          return
+        }
+      } else {
+        if (draft.threshold_xlm === undefined || draft.threshold_xlm === null || isNaN(draft.threshold_xlm)) {
+          setError('Enter a valid XLM threshold')
+          return
+        }
+        if (draft.threshold_xlm <= 0) {
+          setError('Threshold must be greater than 0')
+          return
+        }
       }
     }
     if (draft.type === 'FunctionCalled') {
@@ -149,15 +254,41 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
   }
 
   function startEdit(index: number) {
-    setDraft(rules[index])
+    const rule = rules[index]
+    setDraft(rule)
     setEditingIndex(index)
     setError(null)
+    setWarning(null)
+    setTokenDecimals(null)
+    setDecimalsError(null)
+    setDecimalsLoading(false)
+    if (rule.type === 'LargeTransfer' && rule.asset) {
+      setDecimalsLoading(true)
+      fetchTokenDecimals(rule.asset).then((decimals) => {
+        setDraft((prev) => {
+          if (prev.asset !== rule.asset) return prev
+          setDecimalsLoading(false)
+          if (decimals === null) {
+            setDecimalsError('Could not fetch token decimals for this contract')
+            setTokenDecimals(null)
+          } else {
+            setDecimalsError(null)
+            setTokenDecimals(decimals)
+          }
+          return prev
+        })
+      })
+    }
   }
 
   function cancelEdit() {
     setDraft(emptyRule())
     setEditingIndex(null)
     setError(null)
+    setWarning(null)
+    setTokenDecimals(null)
+    setDecimalsError(null)
+    setDecimalsLoading(false)
   }
 
   function removeRule(index: number) {
@@ -239,18 +370,60 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
         </div>
 
         {draft.type === 'LargeTransfer' && (
-          <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">Threshold (XLM)</label>
-            <input
-              type="number"
-              min="0"
-              step="any"
-              placeholder="e.g. 10000"
-              value={draft.threshold_xlm ?? ''}
-              onChange={(e) => updateDraft({ threshold_xlm: parseFloat(e.target.value) || undefined })}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500"
-            />
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">
+                Asset <span className="text-zinc-600">(optional — SAC/token contract ID)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. C... (leave empty for XLM)"
+                value={draft.asset ?? ''}
+                onChange={(e) => handleAssetChange(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500"
+              />
+              {decimalsLoading && <p className="text-xs text-zinc-500 mt-1">Fetching token decimals…</p>}
+              {!decimalsLoading && decimalsError && <p className="text-xs text-red-400 mt-1">{decimalsError}</p>}
+              {!decimalsLoading && !decimalsError && tokenDecimals !== null && (
+                <p className="text-xs text-zinc-500 mt-1">Token decimals: {tokenDecimals}</p>
+              )}
+            </div>
+            {draft.asset ? (
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">Threshold (token units)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="e.g. 1000"
+                  value={draft.threshold ?? ''}
+                  onChange={(e) => updateDraft({ threshold: parseFloat(e.target.value) || undefined })}
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">Threshold (XLM)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="e.g. 10000"
+                  value={draft.threshold_xlm ?? ''}
+                  onChange={(e) => updateDraft({ threshold_xlm: parseFloat(e.target.value) || undefined })}
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+            )}
           </div>
+        )}
+
+        {hasSpec && (
+          <datalist id={datalistId}>
+            {specFunctions.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
         )}
 
         {draft.type === 'FunctionCalled' && (
@@ -258,6 +431,7 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
             <label className="block text-xs font-medium text-zinc-400 mb-1">Function Name</label>
             <input
               type="text"
+              list={hasSpec ? datalistId : undefined}
               placeholder="e.g. transfer"
               value={draft.function_name ?? ''}
               onChange={(e) => updateDraft({ function_name: e.target.value })}
@@ -273,6 +447,7 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
             </label>
             <input
               type="text"
+              list={hasSpec ? datalistId : undefined}
               placeholder="e.g. set_admin, upgrade, migrate"
               value={draft.function_names?.join(', ') ?? ''}
               onChange={(e) =>
@@ -288,8 +463,27 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
           </div>
         )}
 
+        {/* Optional rule name — shown in rule list, Active Rules, and WebhookLog */}
+        <div>
+          <label className="block text-xs font-medium text-zinc-400 mb-1">
+            Rule Name <span className="text-zinc-600">(optional, max 60 chars)</span>
+          </label>
+          <input
+            type="text"
+            placeholder='e.g. "Treasury withdraw"'
+            maxLength={60}
+            value={draft.name ?? ''}
+            onChange={(e) => updateDraft({ name: e.target.value || undefined })}
+            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500"
+          />
+          {draft.name !== undefined && (
+            <p className="text-xs text-zinc-600 mt-0.5 text-right">{draft.name.length}/60</p>
+          )}
+        </div>
+
         {error && <p className="text-xs text-red-400">{error}</p>}
         {warning && <p className="text-xs text-amber-400">{warning}</p>}
+        {specWarning && <p className="text-xs text-amber-400">{specWarning}</p>}
 
         <div className="flex flex-wrap gap-2">
           <button
@@ -330,6 +524,9 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
             <li key={i} className={`flex items-center justify-between rounded-lg px-3 py-2 border ${editingIndex === i ? 'bg-indigo-900/30 border-indigo-600' : 'bg-zinc-900 border-zinc-800'}`}>
               <div className="flex items-center gap-2 flex-wrap">
                 <AlertRuleBadge type={rule.type} />
+                {rule.name && (
+                  <span className="text-xs font-medium text-zinc-200">{rule.name}</span>
+                )}
                 {formatRuleSummary(rule) && (
                   <span className="text-xs font-mono text-zinc-400">{formatRuleSummary(rule)}</span>
                 )}

@@ -14,6 +14,7 @@ import EditRulesModal from '@/components/EditRulesModal'
 import DeleteContractModal from '@/components/DeleteContractModal'
 import ContractDetailLoading from './loading'
 
+
 export default function ContractDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const { trackEvent } = useAnalytics()
@@ -37,6 +38,41 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
   const [editedWebhookSecret, setEditedWebhookSecret] = useState('')
   const [showWebhookSecret, setShowWebhookSecret] = useState(false)
   const [metadataError, setMetadataError] = useState<string | null>(null)
+  const [relativeCreatedAt, setRelativeCreatedAt] = useState<string>('')
+
+  useEffect(() => {
+    if (!contract?.created_at) return
+    const update = () => setRelativeCreatedAt(formatRelativeTime(contract.created_at))
+    update()
+    const interval = setInterval(update, 30000)
+    return () => clearInterval(interval)
+  }, [contract?.created_at])
+
+
+  // Explorer preference
+  const [explorer, setExplorer] = useState<ExplorerId>('stellar-expert')
+
+  // Contract instance TTL state
+  const [liveUntilLedgerSeq, setLiveUntilLedgerSeq] = useState<number | null>(null)
+  const [expiryDate, setExpiryDate] = useState<Date | null>(null)
+  const [ttlLoading, setTtlLoading] = useState(false)
+  const [ttlError, setTtlError] = useState<string | null>(null)
+
+  // On-chain metadata state
+  const [chainMetadata, setChainMetadata] = useState<ContractMetadata | null>(null)
+  const [chainMetadataLoading, setChainMetadataLoading] = useState(true)
+  const [chainMetadataError, setChainMetadataError] = useState(false)
+
+  // Recent events state
+  const [events, setEvents] = useState<ContractEvent[]>([])
+  const [eventsLoading, setEventsLoading] = useState(true)
+  const [eventsError, setEventsError] = useState(false)
+
+  useEffect(() => {
+    if (!undoToast) return
+    const timer = setTimeout(() => setUndoToast(null), 8000)
+    return () => clearTimeout(timer)
+  }, [undoToast])
 
   useEffect(() => {
     const c = getContract(params.id)
@@ -51,8 +87,97 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
     return alerts.filter(a => a.transaction_hash.toLowerCase().includes(searchLower))
   }, [alerts, searchHash])
 
+  useEffect(() => {
+    if (!contract) return
+    let cancelled = false
+    setTtlLoading(true)
+    setTtlError(null)
+    fetchContractInstance(contract.network, contract.contract_id)
+      .then((instance) => {
+        if (cancelled) return
+        if (!instance) {
+          setTtlError('Unable to load instance TTL')
+          return
+        }
+        setLiveUntilLedgerSeq(instance.liveUntilLedgerSeq)
+        setExpiryDate(estimateExpiryDate(instance.liveUntilLedgerSeq))
+      })
+      .catch(() => {
+        if (!cancelled) setTtlError('Unable to load instance TTL')
+      })
+      .finally(() => {
+        if (!cancelled) setTtlLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [contract])
+
+  const daysToExpiry = expiryDate
+    ? Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null
+  const expirySeverity: 'red' | 'amber' | null =
+    daysToExpiry === null ? null : daysToExpiry < 7 ? 'red' : daysToExpiry < 30 ? 'amber' : null
+
+  useEffect(() => {
+    if (!contract) return
+    let cancelled = false
+    setChainMetadataLoading(true)
+    setChainMetadataError(false)
+    fetchContractMetadata(contract.network, contract.contract_id)
+      .then((meta) => {
+        if (cancelled) return
+        setChainMetadata(meta)
+        setChainMetadataLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setChainMetadataError(true)
+        setChainMetadataLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [contract?.network, contract?.contract_id])
+
+  useEffect(() => {
+    if (!contract) return
+    let cancelled = false
+    setEventsLoading(true)
+    setEventsError(false)
+    fetchContractEvents(contract.network, contract.contract_id)
+      .then((evts) => {
+        if (cancelled) return
+        setEvents(evts)
+        setEventsLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setEventsError(true)
+        setEventsLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [contract?.network, contract?.contract_id])
+
+  function refreshEvents() {
+    if (!contract) return
+    setEventsLoading(true)
+    setEventsError(false)
+    fetchContractEvents(contract.network, contract.contract_id)
+      .then((evts) => {
+        setEvents(evts)
+        setEventsLoading(false)
+      })
+      .catch(() => {
+        setEventsError(true)
+        setEventsLoading(false)
+      })
+  }
+
   function handleDelete() {
+    const deletedContract = contract!
+    const deletedAlerts = alerts
     deleteContract(params.id)
+    setShowDelete(false)
+    setUndoToast({ contract: deletedContract, alerts: deletedAlerts })
     router.push('/contracts')
   }
 
@@ -170,18 +295,48 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
 
   if (!contract) return <ContractDetailLoading />
 
+  const isPaused = contract.enabled === false
+
   return (
     <div className="space-y-8 max-w-4xl">
+      {/* Undo Delete Toast */}
+      {undoToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 shadow-lg">
+          <p className="text-sm text-zinc-300">
+            Deleted <span className="text-zinc-100 font-medium">{undoToast.contract.label}</span>
+          </p>
+          <button
+            onClick={handleUndoDelete}
+            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
+          >
+            Undo
+          </button>
+          <button
+            onClick={() => setUndoToast(null)}
+            className="text-zinc-500 hover:text-zinc-300 transition-colors"
+            aria-label="Dismiss"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div className="space-y-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold text-zinc-100">{contract.label}</h1>
             <NetworkBadge network={contract.network} />
+            {isPaused && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-900/30 border border-amber-700 text-xs font-medium text-amber-400">
+                Paused
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <a
-              href={explorerContractUrl(contract.network, contract.contract_id)}
+              href={explorerContractUrl(contract.network, contract.contract_id, explorer)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm font-mono text-indigo-400 hover:text-indigo-300 transition-colors break-all"
@@ -192,6 +347,18 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <button
+            onClick={handleToggleEnabled}
+            className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+          >
+            {isPaused ? 'Resume' : 'Pause'}
+          </button>
+          <button
+            onClick={handleDuplicate}
+            className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+          >
+            Duplicate
+          </button>
           <button
             onClick={openEditMetadata}
             className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
@@ -240,9 +407,15 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
         )}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
           <p className="text-xs text-zinc-500 mb-1">Registered</p>
-          <p className="text-sm text-zinc-300">{formatDate(contract.created_at)}</p>
-          <p className="text-xs text-zinc-500 mt-1">{new Date(contract.created_at).toLocaleTimeString()}</p>
+          <p
+            className="text-sm text-zinc-300 cursor-help"
+            title={`${formatDate(contract.created_at)} ${new Date(contract.created_at).toLocaleTimeString()}`}
+          >
+            {relativeCreatedAt || formatRelativeTime(contract.created_at)}
+          </p>
+          <p className="text-xs text-zinc-500 mt-1">{formatDate(contract.created_at)}</p>
         </div>
+
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
           <p className="text-xs text-zinc-500 mb-1">{alerts.length === 0 ? 'Total Alerts' : 'Last Alert'}</p>
           {alerts.length === 0 ? (
@@ -251,6 +424,91 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
             <>
               <p className="text-sm text-zinc-300">{formatDate(alerts[0].timestamp)}</p>
               <p className="text-xs text-zinc-500 mt-1">{new Date(alerts[0].timestamp).toLocaleTimeString()}</p>
+            </>
+          )}
+        </div>
+        {!chainMetadataError && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+            <p className="text-xs text-zinc-500 mb-1">WASM Hash</p>
+            {chainMetadataLoading ? (
+              <div className="h-4 w-32 bg-zinc-800 rounded animate-pulse" />
+            ) : chainMetadata?.isSac ? (
+              <p className="text-sm text-zinc-300">Stellar Asset Contract</p>
+            ) : chainMetadata?.wasmHash ? (
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-mono text-zinc-300 break-all">
+                  {truncateId(chainMetadata.wasmHash, 8)}
+                </span>
+                <CopyButton text={chainMetadata.wasmHash} />
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-500">Unavailable</p>
+            )}
+          </div>
+        )}
+        {!chainMetadataError && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+            <p className="text-xs text-zinc-500 mb-1">Last Modified Ledger</p>
+            {chainMetadataLoading ? (
+              <div className="h-4 w-20 bg-zinc-800 rounded animate-pulse" />
+            ) : chainMetadata?.lastModifiedLedger != null ? (
+              <p className="text-sm text-zinc-300 font-mono">
+                {chainMetadata.lastModifiedLedger.toLocaleString()}
+              </p>
+            ) : (
+              <p className="text-sm text-zinc-500">Unavailable</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Instance TTL / Expiry */}
+      <div>
+        <h2 className="text-lg font-semibold text-zinc-100 mb-3">Instance Expiry</h2>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-2">
+          {ttlLoading ? (
+            <p className="text-sm text-zinc-500">Loading instance TTL…</p>
+          ) : ttlError ? (
+            <p className="text-sm text-zinc-500">{ttlError}</p>
+          ) : liveUntilLedgerSeq === null ? (
+            <p className="text-sm text-zinc-500">No TTL information available.</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+                <div>
+                  <p className="text-xs text-zinc-500">Live Until Ledger</p>
+                  <p className="text-sm font-mono text-zinc-300">{liveUntilLedgerSeq.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-zinc-500">Estimated Expiry</p>
+                  <p className="text-sm text-zinc-300">
+                    {expiryDate ? expiryDate.toLocaleString() : 'Unknown'}
+                  </p>
+                </div>
+                {daysToExpiry !== null && (
+                  <div>
+                    <p className="text-xs text-zinc-500">Time Remaining</p>
+                    <p className="text-sm text-zinc-300">
+                      {daysToExpiry <= 0 ? 'Expired or expiring today' : `${daysToExpiry} day${daysToExpiry === 1 ? '' : 's'}`}
+                    </p>
+                  </div>
+                )}
+              </div>
+              {expirySeverity && (
+                <div
+                  className={
+                    expirySeverity === 'red'
+                      ? 'bg-red-900/20 border border-red-800 rounded-lg p-3'
+                      : 'bg-amber-900/20 border border-amber-800 rounded-lg p-3'
+                  }
+                >
+                  <p className={expirySeverity === 'red' ? 'text-xs text-red-400' : 'text-xs text-amber-400'}>
+                    {expirySeverity === 'red'
+                      ? 'This contract instance expires in under 7 days. Extend its TTL to avoid archival.'
+                      : 'This contract instance expires in under 30 days. Consider extending its TTL.'}
+                  </p>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -266,6 +524,9 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
             {contract.rules.map((rule, i) => (
               <div key={i} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
                 <AlertRuleBadge type={rule.type} />
+                {rule.name && (
+                  <span className="text-xs font-medium text-zinc-200">{rule.name}</span>
+                )}
                 {formatRuleSummary(rule) && (
                   <span className="text-xs font-mono text-zinc-400">{formatRuleSummary(rule)}</span>
                 )}
@@ -306,6 +567,77 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
         </div>
       </div>
 
+      {/* Recent Activity */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold text-zinc-100">Recent activity</h2>
+          <button
+            onClick={refreshEvents}
+            disabled={eventsLoading}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg
+              className={`w-4 h-4 ${eventsLoading ? 'animate-spin' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </button>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+          {eventsLoading ? (
+            <div className="space-y-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="h-10 bg-zinc-800 rounded animate-pulse" />
+              ))}
+            </div>
+          ) : eventsError ? (
+            <div className="text-center space-y-3 py-4">
+              <p className="text-sm text-zinc-400">Failed to load recent events.</p>
+              <button
+                onClick={refreshEvents}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          ) : events.length === 0 ? (
+            <p className="text-sm text-zinc-500">No recent events</p>
+          ) : (
+            <ul className="divide-y divide-zinc-800">
+              {events.slice(0, 20).map((event, i) => (
+                <li key={`${event.txHash}-${i}`} className="py-3 space-y-1">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-zinc-200">{event.type}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-mono text-zinc-500">
+                        Ledger {event.ledger.toLocaleString()}
+                      </span>
+                      <a
+                        href={explorerTxUrl(contract.network, event.txHash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                      >
+                        View tx
+                      </a>
+                    </div>
+                  </div>
+                  {event.topics.length > 0 && (
+                    <p className="text-xs font-mono text-zinc-400 break-all">
+                      {event.topics.map((t) => JSON.stringify(t)).join(' · ')}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
       {/* Edit Metadata Modal */}
       {showEditMetadata && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
@@ -315,9 +647,12 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
             <div className="space-y-4">
               {/* Label field */}
               <div>
-                <label htmlFor="edit-label" className="block text-sm font-medium text-zinc-300 mb-2">
-                  Label
-                </label>
+                <div className="flex justify-between items-center mb-2">
+                  <label htmlFor="edit-label" className="block text-sm font-medium text-zinc-300">
+                    Label
+                  </label>
+                  <span className="text-xs text-zinc-500">{editedLabel.length}/100</span>
+                </div>
                 <input
                   id="edit-label"
                   type="text"
@@ -328,9 +663,10 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
                   className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 />
                 <p className="text-xs text-zinc-500 mt-1">
-                  {editedLabel.length}/100 characters
+                  {editedLabel.length}/100
                 </p>
               </div>
+
 
               {/* Webhook URL field */}
               <div>
@@ -409,7 +745,7 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
             <h3 className="text-lg font-semibold text-zinc-100">Delete Contract?</h3>
             <div className="space-y-2 text-sm text-zinc-400">
               <p>
-                This will permanently remove <span className="text-zinc-200 font-medium">{contract.label}</span> and cannot be undone.
+                This will remove <span className="text-zinc-200 font-medium">{contract.label}</span>. You&apos;ll have a few seconds to undo.
               </p>
               <p className="text-xs text-zinc-500">
                 Deleted data:
