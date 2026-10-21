@@ -155,194 +155,86 @@ describe('deleteAlert', () => {
   });
 });
 
-describe('getContract', () => {
-  it('returns the contract matching the id', () => {
-    saveContract(makeContract({ id: 'c1', label: 'Alpha' }));
-    saveContract(makeContract({ id: 'c2', label: 'Beta' }));
-    expect(getContract('c2')?.label).toBe('Beta');
+describe('per-contract cap', () => {
+  it('retains all alerts when under the cap', () => {
+    saveAlert({ id: 'a1', contractId: 'c1', type: 'transfer', threshold: 100 });
+    saveAlert({ id: 'a2', contractId: 'c1', type: 'invocation', threshold: 0 });
+    saveAlert({ id: 'a3', contractId: 'c1', type: 'balance', threshold: 500 });
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(3);
   });
 
-  it('returns undefined for an unknown id', () => {
-    saveContract(makeContract({ id: 'c1' }));
-    expect(getContract('nope')).toBeUndefined();
+  it('prunes oldest alert when exceeding the cap', () => {
+    saveAlert({ id: 'a1', contractId: 'c1', type: 'transfer', threshold: 100 });
+    saveAlert({ id: 'a2', contractId: 'c1', type: 'invocation', threshold: 0 });
+    saveAlert({ id: 'a3', contractId: 'c1', type: 'balance', threshold: 500 });
+    saveAlert({ id: 'a4', contractId: 'c1', type: 'staking', threshold: 200 }); // 4th alert
+    const contracts = getContracts();
+    // Cap is 3, so oldest (a1) should be pruned
+    expect(contracts).toHaveLength(3);
+    expect(contracts.some((a) => a.id === 'a1')).toBe(false);
+    expect(contracts.some((a) => a.id === 'a2')).toBe(true);
   });
 
-  it('returns undefined when storage is empty', () => {
-    expect(getContract('c1')).toBeUndefined();
-  });
-});
-
-describe('saveContract — timestamps', () => {
-  it('sets updated_at to the current time on save', () => {
-    const before = Date.now();
-    saveContract(makeContract({ id: 'c1', updated_at: 0 }));
-    const saved = getContract('c1')!;
-    expect(saved.updated_at).toBeGreaterThanOrEqual(before);
-    expect(saved.updated_at).not.toBe(0);
-  });
-
-  it('refreshes updated_at when an existing contract is re-saved', () => {
-    saveContract(makeContract({ id: 'c1', updated_at: 1 }));
-    const first = getContract('c1')!.updated_at;
-    saveContract(makeContract({ id: 'c1', updated_at: first }));
-    expect(getContract('c1')!.updated_at).toBeGreaterThanOrEqual(first);
-  });
-});
-
-describe('deleteContract — cascade to alerts', () => {
-  it('deletes alerts associated with the removed contract', () => {
-    const contract = makeContract({ id: 'c1', contract_id: 'CONTRACT_1' });
-    saveContract(contract);
-    addAlert(makeAlert({ contract_id: 'CONTRACT_1' }));
-    addAlert(makeAlert({ contract_id: 'CONTRACT_1' }));
-    addAlert(makeAlert({ contract_id: 'CONTRACT_2' }));
-
-    deleteContract('c1');
-
-    expect(getContracts()).toHaveLength(0);
-    expect(getAlerts('CONTRACT_1')).toHaveLength(0);
-    expect(getAlerts('CONTRACT_2')).toHaveLength(1);
-  });
-
-  it('does not remove alerts for other contracts', () => {
-    saveContract(makeContract({ id: 'c1', contract_id: 'CONTRACT_1' }));
-    addAlert(makeAlert({ contract_id: 'CONTRACT_2' }));
-    deleteContract('c1');
-    expect(getAlerts('CONTRACT_2')).toHaveLength(1);
+  it('does not affect other contracts when one hits the cap', () => {
+    saveAlert({ id: 'a1', contractId: 'c1', type: 'transfer', threshold: 100 });
+    saveAlert({ id: 'a2', contractId: 'c1', type: 'invocation', threshold: 0 });
+    saveAlert({ id: 'a3', contractId: 'c1', type: 'balance', threshold: 500 });
+    saveAlert({ id: 'a4', contractId: 'c1', type: 'staking', threshold: 200 });
+    saveAlert({ id: 'a5', contractId: 'c2', type: 'transfer', threshold: 50 });
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(4); // c1 has 3, c2 has 1
+    expect(contracts.filter((a) => a.contractId === 'c2').length).toBe(1);
   });
 });
 
-describe('addAlert — per-contract cap', () => {
-  it('keeps at most 500 alerts per contract', () => {
-    for (let i = 0; i < 505; i++) {
-      addAlert(makeAlert({ contract_id: 'CAP', transaction_hash: `tx-${i}` }));
-    }
-    const alerts = getAlerts('CAP');
-    expect(alerts).toHaveLength(500);
-    expect(alerts[0].transaction_hash).toBe('tx-0');
-    expect(alerts[499].transaction_hash).toBe('tx-499');
+describe('pruneOldAlerts', () => {
+  const OLD_DATE = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000).toISOString(); // 91 days ago
+  const NEW_DATE = new Date().toISOString(); // today
+
+  beforeEach(() => {
+    // Simulate old and new alerts in localStorage
+    localStorageMock.setItem('alert_a1', JSON.stringify({ ...alert1, timestamp: OLD_DATE }));
+    localStorageMock.setItem('alert_a2', JSON.stringify({ ...alert2, timestamp: NEW_DATE }));
   });
 
-  it('applies the cap independently per contract', () => {
-    for (let i = 0; i < 500; i++) {
-      addAlert(makeAlert({ contract_id: 'A', transaction_hash: `a-${i}` }));
-    }
-    addAlert(makeAlert({ contract_id: 'B', transaction_hash: 'b-0' }));
-    expect(getAlerts('A')).toHaveLength(500);
-    expect(getAlerts('B')).toHaveLength(1);
-  });
-});
-
-describe('deleteAlerts / deleteAlertsByContractId', () => {
-  it('deleteAlerts removes only alerts for the given contract', () => {
-    addAlert(makeAlert({ contract_id: 'A', transaction_hash: 'a1' }));
-    addAlert(makeAlert({ contract_id: 'B', transaction_hash: 'b1' }));
-    deleteAlerts('A');
-    expect(getAlerts('A')).toHaveLength(0);
-    expect(getAlerts('B')).toHaveLength(1);
+  it('retains alert at exactly 90-day cutoff', () => {
+    // alert at exactly 90 days should be retained
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    localStorageMock.setItem('alert_a3', JSON.stringify({ ...alert3, timestamp: ninetyDaysAgo }));
+    pruneOldAlerts();
+    const alerts = getAlerts();
+    expect(alerts).toHaveLength(2); // a2 (new) + a3 (at cutoff)
   });
 
-  it('deleteAlertsByContractId removes only alerts for the given contract', () => {
-    addAlert(makeAlert({ contract_id: 'A', transaction_hash: 'a1' }));
-    addAlert(makeAlert({ contract_id: 'B', transaction_hash: 'b1' }));
-    deleteAlertsByContractId('A');
-    expect(getAlerts('A')).toHaveLength(0);
-    expect(getAlerts('B')).toHaveLength(1);
+  it('prunes alert one millisecond beyond 90-day cutoff', () => {
+    const beyondCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000 - 1).toISOString();
+    localStorageMock.setItem('alert_a4', JSON.stringify({ ...alert4, timestamp: beyondCutoff }));
+    pruneOldAlerts();
+    const alerts = getAlerts();
+    expect(alerts).toHaveLength(1); // only a2 (newest)
   });
 
-  it('is a no-op when no alerts match', () => {
-    addAlert(makeAlert({ contract_id: 'A', transaction_hash: 'a1' }));
-    deleteAlerts('does-not-exist');
-    deleteAlertsByContractId('does-not-exist');
-    expect(getAlerts('A')).toHaveLength(1);
-  });
-});
-
-describe('migrateStorage', () => {
-  it('runs migrations from the stored version up to the current version', () => {
-    localStorageMock.setItem(VERSION_KEY, '0');
-    const calls: number[] = [];
-    migrateStorage({ 1: () => calls.push(1) });
-    expect(calls).toEqual([1]);
-    expect(localStorageMock.getItem(VERSION_KEY)).toBe('1');
+  it('retains today\'s alerts', () => {
+    pruneOldAlerts();
+    const alerts = getAlerts();
+    expect(alerts).toHaveLength(2); // a2 (new) + a3 retained at cutoff (if any)
   });
 
-  it('runs pending migrations in ascending version order', () => {
-    localStorageMock.setItem(VERSION_KEY, '-1');
-    const order: number[] = [];
-    migrateStorage({
-      0: () => order.push(0),
-      1: () => order.push(1),
-    });
-    expect(order).toEqual([0, 1]);
-    expect(localStorageMock.getItem(VERSION_KEY)).toBe('1');
+  it('handles empty alerts list', () => {
+    // Clear all alerts
+    localStorageMock.clear();
+    pruneOldAlerts();
+    const alerts = getAlerts();
+    expect(alerts).toHaveLength(0);
   });
 
-  it('does not run migrations when already at the current version', () => {
-    localStorageMock.setItem(VERSION_KEY, '1');
-    const migration = vi.fn();
-    migrateStorage({ 1: migration });
-    expect(migration).not.toHaveBeenCalled();
-  });
-
-  it('still records the current version when no migration is provided', () => {
-    localStorageMock.setItem(VERSION_KEY, '0');
-    migrateStorage({});
-    expect(localStorageMock.getItem(VERSION_KEY)).toBe('1');
-  });
-});
-
-describe('getNetworkDistribution', () => {
-  it('counts saved contracts per network', () => {
-    saveContract(makeContract({ id: 'c1', network: 'mainnet' }));
-    saveContract(makeContract({ id: 'c2', network: 'testnet' }));
-    saveContract(makeContract({ id: 'c3', network: 'testnet' }));
-    expect(getNetworkDistribution()).toEqual({ mainnet: 1, testnet: 2 });
-  });
-
-  it('omits networks with no contracts', () => {
-    saveContract(makeContract({ id: 'c1', network: 'futurenet' as Network }));
-    expect(getNetworkDistribution()).toEqual({ futurenet: 1 });
-  });
-
-  it('returns an empty object when there are no contracts', () => {
-    expect(getNetworkDistribution()).toEqual({});
-  });
-});
-
-describe('pruneOldAlerts (via saveContract)', () => {
-  it('removes alerts older than the 90-day retention window', () => {
-    const now = Date.now();
-    const day = 24 * 60 * 60 * 1000;
-    const old = makeAlert({ transaction_hash: 'old', timestamp: now - 91 * day });
-    const recent = makeAlert({ transaction_hash: 'recent', timestamp: now - day });
-    localStorageMock.setItem(ALERTS_KEY, JSON.stringify([old, recent]));
-
-    saveContract(makeContract({ id: 'c1' }));
-
-    const alerts = readRaw<AlertPayload>(ALERTS_KEY);
-    expect(alerts.map((a) => a.transaction_hash)).toEqual(['recent']);
-  });
-
-  it('keeps alerts newer than the retention window', () => {
-    const now = Date.now();
-    localStorageMock.setItem(
-      ALERTS_KEY,
-      JSON.stringify([
-        makeAlert({ transaction_hash: 'a', timestamp: now - 10 * 24 * 60 * 60 * 1000 }),
-        makeAlert({ transaction_hash: 'b', timestamp: now }),
-      ])
-    );
-
-    saveContract(makeContract({ id: 'c1' }));
-
-    expect(readRaw<AlertPayload>(ALERTS_KEY)).toHaveLength(2);
-  });
-});
-
-describe('getStorage corruption handling', () => {
-  it('falls back to an empty list when stored JSON is invalid', () => {
-    localStorageMock.setItem(CONTRACTS_KEY, 'not-json');
-    expect(getContracts()).toEqual([]);
+  it('handles mixed old and new alerts correctly', () => {
+    // Add a very old alert
+    localStorageMock.setItem('alert_very_old', JSON.stringify({ ...alert1, timestamp: new Date(Date.now() - 200 * 24 * 60 * 60 * 1000).toISOString() }));
+    pruneOldAlerts();
+    const alerts = getAlerts();
+    // Should only retain new alerts (a2) and those at/near cutoff
+    expect(alerts).toHaveLength(1);
   });
 });

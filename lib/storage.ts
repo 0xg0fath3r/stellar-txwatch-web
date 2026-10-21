@@ -1,4 +1,9 @@
 import { WatchedContract, AlertPayload, Network } from '@/types'
+import {
+  STORAGE_QUOTA_BYTES,
+  MAX_ALERTS_PER_CONTRACT,
+  ALERTS_RETENTION_DAYS,
+} from './constants'
 
 const CONTRACTS_KEY = 'txwatch_contracts'
 const ALERTS_KEY = 'txwatch_alerts'
@@ -19,11 +24,6 @@ function load<T>(key: string): T[] {
     return []
   }
 }
-
-const STORAGE_QUOTA_BYTES = 5 * 1024 * 1024 // 5MB typical limit
-const MAX_ALERTS_PER_CONTRACT = 500
-const ALERTS_RETENTION_DAYS = 90
-
 function getStorageSize(): number {
   const storage = getStorage()
   if (!storage) return 0
@@ -39,7 +39,7 @@ function getStorageSize(): number {
   return size
 }
 
-function pruneOldAlerts() {
+function pruneOldAlerts(): void {
   const storage = getStorage()
   if (!storage) return
   const cutoff = Date.now() - ALERTS_RETENTION_DAYS * 24 * 60 * 60 * 1000
@@ -50,7 +50,7 @@ function pruneOldAlerts() {
   }
 }
 
-function trimAlertsToCutoff(cutoff: number) {
+function trimAlertsToCutoff(cutoff: number): void {
   const storage = getStorage()
   if (!storage) return
   const alerts = load<AlertPayload>(ALERTS_KEY)
@@ -60,7 +60,7 @@ function trimAlertsToCutoff(cutoff: number) {
   }
 }
 
-function save<T>(key: string, data: T[]) {
+function save<T>(key: string, data: T[]): void {
   const storage = getStorage()
   if (!storage) return
 
@@ -93,13 +93,13 @@ function getStorageVersion(): number {
   return parseInt(storage.getItem(STORAGE_VERSION_KEY) ?? '0', 10)
 }
 
-function setStorageVersion(version: number) {
+function setStorageVersion(version: number): void {
   const storage = getStorage()
   if (!storage) return
   storage.setItem(STORAGE_VERSION_KEY, version.toString())
 }
 
-export function migrateStorage(migrations: Record<number, () => void>) {
+export function migrateStorage(migrations: Record<number, () => void>): void {
   const currentVersion = getStorageVersion()
   for (let v = currentVersion + 1; v <= CURRENT_STORAGE_VERSION; v++) {
     if (migrations[v]) {
@@ -131,13 +131,13 @@ export function getContractByIdAndNetwork(
   return getContracts().find((c) => c.contract_id === contractId && c.network === network)
 }
 
-export function saveContract(contract: WatchedContract) {
+export function saveContract(contract: WatchedContract): void {
   const contracts = getContracts().filter((c) => c.id !== contract.id)
-  const updated = { ...contract, updated_at: Date.now() }
+  const updated: WatchedContract = { ...contract, updated_at: Date.now() }
   save(CONTRACTS_KEY, [...contracts, updated])
 }
 
-export function deleteContract(id: string) {
+export function deleteContract(id: string): void {
   const contract = getContract(id)
   save(CONTRACTS_KEY, getContracts().filter((c) => c.id !== id))
   if (contract) {
@@ -145,12 +145,12 @@ export function deleteContract(id: string) {
   }
 }
 
-export function deleteAlerts(contractId: string) {
+export function deleteAlerts(contractId: string): void {
   const alerts = load<AlertPayload>(ALERTS_KEY)
   save(ALERTS_KEY, alerts.filter((a) => a.contract_id !== contractId))
 }
 
-export function deleteAlert(alertId: string) {
+export function deleteAlert(alertId: string): void {
   const alerts = load<AlertPayload & { id?: string }>(ALERTS_KEY)
   save(ALERTS_KEY, alerts.filter((a) => a.id !== alertId))
 }
@@ -166,6 +166,9 @@ export function seedMockAlerts(
   network: Network,
   count = 5
 ): void {
+  if (process.env.NODE_ENV === 'production') return
+  if (typeof window === 'undefined') return
+
   const storage = getStorage()
   if (!storage) return
 
@@ -189,7 +192,7 @@ export function seedMockAlerts(
   save(ALERTS_KEY, [...alerts, ...load<AlertPayload>(ALERTS_KEY)])
 }
 
-export function addAlert(alert: AlertPayload | (AlertPayload & { contractId?: string; id?: string })) {
+export function addAlert(alert: AlertPayload | (AlertPayload & { contractId?: string; id?: string })): void {
   const normalizedAlert = {
     ...alert,
     contract_id: alert.contract_id ?? (alert as { contractId?: string }).contractId,
@@ -202,7 +205,7 @@ export function addAlert(alert: AlertPayload | (AlertPayload & { contractId?: st
   }))
 }
 
-export function deleteAlertsByContractId(contractId: string) {
+export function deleteAlertsByContractId(contractId: string): void {
   const alerts = load<AlertPayload>(ALERTS_KEY)
   save(ALERTS_KEY, alerts.filter((a) => a.contract_id !== contractId))
 }
