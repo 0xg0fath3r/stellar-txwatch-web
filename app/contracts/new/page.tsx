@@ -200,6 +200,7 @@ export default function NewContractPage() {
               const newNetwork = e.target.value as Network
               setNetwork(newNetwork)
               checkNetworkMismatch(newNetwork)
+              checkNetworkMismatch(newNetwork)
             }}
             className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
           >
@@ -222,7 +223,7 @@ export default function NewContractPage() {
               type="url"
               placeholder="https://your-server.com/webhook"
               value={webhookUrl}
-              onChange={(e) => { setWebhookUrl(e.target.value); setErrors((prev) => ({ ...prev, webhook_url: undefined })); setTestStatus('idle'); setTestStatusCode(null) }}
+              onChange={(e) => {              setWebhookUrl(e.target.value); setErrors((prev) => ({ ...prev, webhook_url: undefined })); setTestStatus('idle'); setTestStatusCode(null) }}
               className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
             />
             <button
