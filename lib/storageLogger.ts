@@ -63,8 +63,12 @@ function emitStorageError(ctx: StorageErrorContext): void {
   }
 }
 
-export function safeParseStorage<T>(key: string, fallback: T): T {
-  const raw = localStorage.getItem(key);
+export function safeParseStorage<T>(
+  key: string,
+  fallback: T,
+  storage: Pick<Storage, 'getItem'> = localStorage,
+): T {
+  const raw = storage.getItem(key);
 
   if (raw === null) {
     return fallback;

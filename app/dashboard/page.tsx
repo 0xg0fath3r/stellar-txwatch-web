@@ -1,23 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useContracts } from '@/lib/useContracts'
-import { getTodayAlertCount, getAlerts } from '@/lib/storage'
+import { useTodayAlertCount, useLastAlertTimes } from '@/lib/useAlerts'
 import ContractCard from '@/components/ContractCard'
 import EmptyState from '@/components/EmptyState'
 import NetworkBadge from '@/components/NetworkBadge'
 import { Network } from '@/types'
 
 export default function DashboardPage() {
-  const { contracts } = useContracts()
-  const [alertsToday, setAlertsToday] = useState(0)
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setAlertsToday(getTodayAlertCount())
-    setMounted(true)
-  }, [])
+  const { contracts, loading } = useContracts()
+  const alertsToday = useTodayAlertCount()
+  const lastAlertTimes = useLastAlertTimes()
 
   const activeContracts = contracts.filter((c) => c.enabled).length
   const pausedContracts = contracts.length - activeContracts
@@ -30,12 +24,7 @@ export default function DashboardPage() {
     .filter((network) => networkCounts[network])
     .map((network) => ({ network, count: networkCounts[network] }))
 
-  function lastAlertTime(contractId: string): number | undefined {
-    const alerts = getAlerts(contractId)
-    return alerts[0]?.timestamp
-  }
-
-  if (!mounted) return null
+  if (loading) return null
 
   return (
     <div className="space-y-8">
@@ -120,7 +109,7 @@ export default function DashboardPage() {
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {contracts.map((c) => (
-            <ContractCard key={c.id} contract={c} lastAlertTime={lastAlertTime(c.id)} />
+            <ContractCard key={c.id} contract={c} lastAlertTime={lastAlertTimes[c.contract_id]} />
           ))}
         </div>
       )}

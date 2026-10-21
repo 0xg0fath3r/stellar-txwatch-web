@@ -183,7 +183,6 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
 
   function handleSaveDetails(updated: WatchedContract) {
     saveContract(updated)
-    setContract(updated)
     setShowEditRules(false)
     trackEvent('rule_edit_saved', { contractId: params.id, ruleCount: editedRules.length })
   }
@@ -249,7 +248,6 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
       webhook_secret: editedWebhookSecret.trim() || undefined,
     }
     saveContract(updated)
-    setContract(updated)
     setShowEditMetadata(false)
     trackEvent('metadata_edit_saved', { contractId: params.id })
   }

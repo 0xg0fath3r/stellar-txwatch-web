@@ -53,11 +53,11 @@ function sortContracts(contracts: WatchedContract[], sortBy: SortOption) {
 
 export default function ContractsPage() {
   const searchParams = useSearchParams()
-  const [allContracts, setAllContracts] = useState<WatchedContract[]>([])
+  const { contracts: allContracts, loading } = useContracts()
+  const lastAlertTimes = useLastAlertTimes()
   const [networkFilter, setNetworkFilter] = useState<NetworkFilter>('all')
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [search, setSearch] = useState(() => searchParams?.get('q') ?? '')
-  const [mounted, setMounted] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('flat')
   const [page, setPage] = useState(1)
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
@@ -199,7 +199,7 @@ export default function ContractsPage() {
     return groups
   }, [sorted])
 
-  if (!mounted) return null
+  if (loading) return null
 
   const hasAnyContracts = allContracts.length > 0
   const hasFilteredContracts = filtered.length > 0
@@ -393,7 +393,7 @@ export default function ContractsPage() {
                     <ContractCard
                       key={contract.id}
                       contract={contract}
-                      lastAlertTime={getAlerts(contract.contract_id)[0]?.timestamp}
+                      lastAlertTime={lastAlertTimes[contract.contract_id]}
                       highlight={highlightedId === contract.id}
                       missing={missingIds.has(contract.id)}
                     />
@@ -410,7 +410,7 @@ export default function ContractsPage() {
               <ContractCard
                 key={contract.id}
                 contract={contract}
-                lastAlertTime={getAlerts(contract.contract_id)[0]?.timestamp}
+                lastAlertTime={lastAlertTimes[contract.contract_id]}
                 highlight={highlightedId === contract.id}
                 missing={missingIds.has(contract.id)}
               />

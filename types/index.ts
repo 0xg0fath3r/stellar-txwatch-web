@@ -1,11 +1,15 @@
-export type Network = 'mainnet' | 'testnet' | 'futurenet'
+import { z } from 'zod'
+import {
+  NetworkSchema,
+  AlertRuleTypeSchema,
+  AlertRuleSchema,
+  WatchedContractSchema,
+  AlertPayloadSchema,
+} from '@/lib/schemas'
 
-export type AlertRuleType =
-  | 'LargeTransfer'
-  | 'AdminFunctionCalled'
-  | 'AnyTransaction'
-  | 'FunctionCalled'
-  | 'TransactionFailed'
+// Types are inferred from the zod schemas in lib/schemas.ts, which are the
+// single source of truth for both compile-time types and runtime validation.
+export type Network = z.infer<typeof NetworkSchema>
 
 export type ExplorerId = 'stellar-expert' | 'stellarchain' | 'horizon'
 

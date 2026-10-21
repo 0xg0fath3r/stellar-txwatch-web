@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { WatchedContract } from '@/types'
 import NetworkBadge from './NetworkBadge'
 import { truncateId } from '@/lib/stellar'
@@ -100,3 +100,6 @@ export default function ContractCard({ contract, lastAlertTime, highlight, missi
     </Link>
   )
 }
+
+// Skip re-rendering cards whose contract, alert time and highlight are unchanged
+export default memo(ContractCard)

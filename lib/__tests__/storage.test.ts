@@ -65,14 +65,43 @@ function readRaw<T>(key: string): T {
 
 Object.defineProperty(global, 'localStorage', { value: localStorageMock });
 
-const contract1 = { id: 'c1', address: 'GABC...001', label: 'Contract Alpha', network: 'mainnet' };
-const contract2 = { id: 'c2', address: 'GDEF...002', label: 'Contract Beta',  network: 'testnet' };
+function makeContract(id: string, label: string, network: Network): WatchedContract {
+  return {
+    id,
+    label,
+    contract_id: `C-${id}`,
+    network,
+    rules: [],
+    webhook_url: '',
+    created_at: 0,
+    updated_at: 0,
+  };
+}
 
-const alert1 = { id: 'a1', contractId: 'c1', type: 'transfer', threshold: 100 };
-const alert2 = { id: 'a2', contractId: 'c1', type: 'invocation', threshold: 0 };
-const alert3 = { id: 'a3', contractId: 'c1', type: 'balance',   threshold: 500 };
+function makeAlert(id: string, contractId: string): AlertPayload {
+  return {
+    id,
+    label: `Alert ${id}`,
+    contract_id: contractId,
+    network: 'mainnet',
+    rule_triggered: 'AnyTransaction',
+    transaction_hash: `hash-${id}`,
+    timestamp: Date.now(),
+    horizon_link: `https://horizon.stellar.org/transactions/hash-${id}`,
+  };
+}
 
-beforeEach(() => localStorageMock.clear());
+const contract1 = makeContract('c1', 'Contract Alpha', 'mainnet');
+const contract2 = makeContract('c2', 'Contract Beta', 'testnet');
+
+const alert1 = makeAlert('a1', 'c1');
+const alert2 = makeAlert('a2', 'c1');
+const alert3 = makeAlert('a3', 'c1');
+
+beforeEach(() => {
+  localStorageMock.clear();
+  clearStorageErrorHandlers();
+});
 
 describe('saveContract / getContracts', () => {
   it('saves a contract and retrieves it', () => {

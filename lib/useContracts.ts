@@ -52,18 +52,21 @@ export async function checkContractsExistence(
 const UNDO_WINDOW_MS = 8000
 
 export function useContracts() {
+  const adapter = useStorageAdapter()
   const [contracts, setContracts] = useState<WatchedContract[]>([])
   const [missingIds, setMissingIds] = useState<string[]>([])
 
-  const refresh = useCallback(() => {
-    setContracts(getContracts())
-  }, [])
+  const refresh = useCallback(async () => {
+    setContracts(await adapter.getContracts())
+    setLoading(false)
+  }, [adapter])
 
   useEffect(() => {
     refresh()
-    const unsubscribe = onContractsChange(refresh)
-    return unsubscribe
-  }, [refresh])
+    return adapter.subscribe((change) => {
+      if (change === 'contracts') refresh()
+    })
+  }, [adapter, refresh])
 
   function add(contract: WatchedContract): void {
     saveContract(contract)
@@ -78,7 +81,13 @@ export function useContracts() {
   function update(contract: WatchedContract): void {
     saveContract(contract)
     refresh()
-  }
+    return adapter.subscribe((change) => {
+      if (change === 'contracts') refresh()
+    })
+  }, [adapter, refresh])
+
+  const save = useCallback((updated: WatchedContract) => adapter.saveContract(updated), [adapter])
+  const remove = useCallback(() => adapter.deleteContract(id), [adapter, id])
 
   function removeMissing() {
     missingIds.forEach((id) => deleteContract(id))
