@@ -1,10 +1,11 @@
 'use client'
 
+import { useRef } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { AlertPayload, AlertRuleType } from '@/types'
-import { explorerTxUrl } from '@/lib/stellar'
+import { explorerTxUrl, truncateId } from '@/lib/stellar'
 import { Network } from '@/types'
 import EmptyState from './EmptyState'
-import { truncateId } from '@/lib/stellar'
 import { formatDateTime } from '@/lib/format'
 import { useState } from 'react'
 import AlertRuleBadge from './AlertRuleBadge'
@@ -22,6 +23,7 @@ const ruleTypes: AlertRuleType[] = [
   'TransactionFailed',
 ]
 
+// CSV export always operates on the full filtered set, not just the visible window.
 function exportCSV(alerts: AlertPayload[]) {
   const rows = [
     ['Time', 'Rule', 'Rule Name', 'Tx Hash', 'Function', 'Amount'],
@@ -44,12 +46,28 @@ function exportCSV(alerts: AlertPayload[]) {
   URL.revokeObjectURL(url)
 }
 
+// Fixed row height in px — keep in sync with the row className below.
+const ROW_HEIGHT = 48
+
+// Height of the scrollable viewport. Shows ~10 rows before scrolling.
+const VIEWPORT_HEIGHT = 480
+
 export default function WebhookLog({ alerts, network }: WebhookLogProps) {
   const [selectedFilter, setSelectedFilter] = useState<AlertRuleType | null>(null)
 
+  // Filtering operates on the full alerts array; only rendering is virtualised.
   const filteredAlerts = selectedFilter
     ? alerts.filter((a) => a.rule_triggered === selectedFilter)
     : alerts
+
+  const parentRef = useRef<HTMLDivElement>(null)
+
+  const virtualizer = useVirtualizer({
+    count: filteredAlerts.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 5,
+  })
 
   if (alerts.length === 0) {
     return (
@@ -95,6 +113,7 @@ export default function WebhookLog({ alerts, network }: WebhookLogProps) {
           <span className="text-xs text-zinc-500">
             {filteredAlerts.length} of {alerts.length} alerts
           </span>
+          {/* exportCSV receives the full filtered set, not the virtual window */}
           <button
             onClick={() => exportCSV(filteredAlerts)}
             className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
@@ -102,6 +121,7 @@ export default function WebhookLog({ alerts, network }: WebhookLogProps) {
             Export CSV
           </button>
         </div>
+
         {filteredAlerts.length === 0 ? (
           <p className="text-sm text-zinc-500 py-4">No alerts match the selected filter.</p>
         ) : (
