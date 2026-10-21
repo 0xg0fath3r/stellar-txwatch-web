@@ -63,3 +63,4 @@ If your change introduces or reverses an architectural decision, add a new ADR f
 - Keep PRs focused - one feature or fix per PR
 - All pages must be mobile responsive and dark-mode compatible
 - Run `npm run build` before opening a PR - zero lint errors required
+- Add a changelog entry under the `[Unreleased]` section in `CHANGELOG.md` for notable user-facing changes or new features
