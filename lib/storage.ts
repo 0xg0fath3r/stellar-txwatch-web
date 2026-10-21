@@ -2,8 +2,8 @@ import { WatchedContract, AlertPayload, Network } from '@/types'
 
 const CONTRACTS_KEY = 'txwatch_contracts'
 const ALERTS_KEY = 'txwatch_alerts'
-const STORAGE_VERSION_KEY = 'txwatch_storage_version'
-const CURRENT_STORAGE_VERSION = 1
+export const STORAGE_VERSION_KEY = 'txwatch_storage_version'
+export const CURRENT_STORAGE_VERSION = 1
 
 function getStorage(): Storage | undefined {
   if (typeof window !== 'undefined') return window.localStorage
@@ -99,14 +99,17 @@ function setStorageVersion(version: number): void {
   storage.setItem(STORAGE_VERSION_KEY, version.toString())
 }
 
-export function migrateStorage(migrations: Record<number, () => void>): void {
+export function migrateStorage(
+  migrations: Record<number, () => void>,
+  targetVersion: number = CURRENT_STORAGE_VERSION
+): void {
   const currentVersion = getStorageVersion()
-  for (let v = currentVersion + 1; v <= CURRENT_STORAGE_VERSION; v++) {
+  for (let v = currentVersion + 1; v <= targetVersion; v++) {
     if (migrations[v]) {
       migrations[v]()
     }
   }
-  setStorageVersion(CURRENT_STORAGE_VERSION)
+  setStorageVersion(targetVersion)
 }
 
 export function getContracts(): WatchedContract[] {
