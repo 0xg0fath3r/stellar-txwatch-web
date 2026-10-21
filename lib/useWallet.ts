@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useFreighterConnection } from './useFreighterConnection'
 
 export function useWallet(): { publicKey: string | null; isConnected: boolean } {
   const [publicKey, setPublicKey] = useState<string | null>(null)
