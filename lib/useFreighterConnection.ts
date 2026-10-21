@@ -24,16 +24,30 @@ export function useFreighterConnection(): { isConnected: boolean; publicKey: str
   const [publicKey, setPublicKey] = useState<string | null>(null)
   const [networkPassphrase, setNetworkPassphrase] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [status, setStatus] = useState<FreighterStatus>('idle')
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     checkConnection()
   }, [])
 
   async function checkConnection() {
+    setLoading(true)
+    setError(null)
     try {
-      if (!window.freighter) {
+      const connectionResult = await isConnected()
+
+      if (connectionResult.error) {
+        // Distinguish "not installed" from other connection errors.
+        const message = connectionResult.error.message || 'Freighter is not available'
+        if (/install/i.test(message)) {
+          setStatus('not-installed')
+        } else {
+          setStatus('error')
+        }
+        setError(message)
         setIsConnected(false)
-        setLoading(false)
+        setPublicKey(null)
         return
       }
       const connected = await window.freighter?.isConnected()
@@ -49,9 +63,27 @@ export function useFreighterConnection(): { isConnected: boolean; publicKey: str
         }
       } else {
         setIsConnected(false)
+        setPublicKey(null)
+        return
       }
-    } catch {
+
+      setPublicKey(keyResult.publicKey)
+      setIsConnected(true)
+      setStatus('connected')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown Freighter error'
+      if (/lock/i.test(message)) {
+        setStatus('locked')
+      } else if (/allow|permission|denied/i.test(message)) {
+        setStatus('not-allowed')
+      } else if (/install/i.test(message)) {
+        setStatus('not-installed')
+      } else {
+        setStatus('error')
+      }
+      setError(message)
       setIsConnected(false)
+      setPublicKey(null)
     } finally {
       setLoading(false)
     }

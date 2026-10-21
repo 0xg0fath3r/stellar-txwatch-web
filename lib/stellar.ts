@@ -1,4 +1,6 @@
 import { Network } from '@/types'
+import { StrKey } from '@stellar/stellar-sdk'
+import { SorobanRpc, Horizon, contract } from '@stellar/stellar-sdk'
 
 export const HORIZON_URLS: Record<Network, string> = {
   mainnet: 'https://horizon.stellar.org',
@@ -118,7 +120,19 @@ export function truncateId(id: string, chars = 8): string {
 }
 
 export function isValidContractId(id: string): boolean {
-  return /^C[A-Z2-7]{55}$/.test(id)
+  try {
+    return StrKey.isValidContract(id)
+  } catch {
+    return false
+  }
+}
+
+export function isValidAccountId(id: string): boolean {
+  try {
+    return StrKey.isValidEd25519PublicKey(id)
+  } catch {
+    return false
+  }
 }
 
 export function isValidUrl(url: string): boolean {
