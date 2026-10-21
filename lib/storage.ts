@@ -133,7 +133,7 @@ export function getContractByIdAndNetwork(
 
 export function saveContract(contract: WatchedContract): void {
   const contracts = getContracts().filter((c) => c.id !== contract.id)
-  const updated = { ...contract, updated_at: Date.now() }
+  const updated: WatchedContract = { ...contract, updated_at: Date.now() }
   save(CONTRACTS_KEY, [...contracts, updated])
 }
 
