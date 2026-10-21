@@ -49,6 +49,15 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
   }, [contract?.created_at])
 
 
+  // Explorer preference
+  const [explorer, setExplorer] = useState<ExplorerId>('stellar-expert')
+
+  // Contract instance TTL state
+  const [liveUntilLedgerSeq, setLiveUntilLedgerSeq] = useState<number | null>(null)
+  const [expiryDate, setExpiryDate] = useState<Date | null>(null)
+  const [ttlLoading, setTtlLoading] = useState(false)
+  const [ttlError, setTtlError] = useState<string | null>(null)
+
   useEffect(() => {
     const c = getContract(params.id)
     if (!c) { setContractNotFound(true); return }
@@ -61,6 +70,38 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
     const searchLower = searchHash.toLowerCase()
     return alerts.filter(a => a.transaction_hash.toLowerCase().includes(searchLower))
   }, [alerts, searchHash])
+
+  useEffect(() => {
+    if (!contract) return
+    let cancelled = false
+    setTtlLoading(true)
+    setTtlError(null)
+    fetchContractInstance(contract.network, contract.contract_id)
+      .then((instance) => {
+        if (cancelled) return
+        if (!instance) {
+          setTtlError('Unable to load instance TTL')
+          return
+        }
+        setLiveUntilLedgerSeq(instance.liveUntilLedgerSeq)
+        setExpiryDate(estimateExpiryDate(instance.liveUntilLedgerSeq))
+      })
+      .catch(() => {
+        if (!cancelled) setTtlError('Unable to load instance TTL')
+      })
+      .finally(() => {
+        if (!cancelled) setTtlLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [contract])
+
+  const daysToExpiry = expiryDate
+    ? Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null
+  const expirySeverity: 'red' | 'amber' | null =
+    daysToExpiry === null ? null : daysToExpiry < 7 ? 'red' : daysToExpiry < 30 ? 'amber' : null
 
   function handleDelete() {
     deleteContract(params.id)
@@ -194,7 +235,7 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
           </div>
           <div className="flex items-center gap-2">
             <a
-              href={explorerContractUrl(contract.network, contract.contract_id)}
+              href={explorerContractUrl(contract.network, contract.contract_id, explorer)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm font-mono text-indigo-400 hover:text-indigo-300 transition-colors break-all"
@@ -270,6 +311,58 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
             <>
               <p className="text-sm text-zinc-300">{formatDate(alerts[0].timestamp)}</p>
               <p className="text-xs text-zinc-500 mt-1">{new Date(alerts[0].timestamp).toLocaleTimeString()}</p>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Instance TTL / Expiry */}
+      <div>
+        <h2 className="text-lg font-semibold text-zinc-100 mb-3">Instance Expiry</h2>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-2">
+          {ttlLoading ? (
+            <p className="text-sm text-zinc-500">Loading instance TTL…</p>
+          ) : ttlError ? (
+            <p className="text-sm text-zinc-500">{ttlError}</p>
+          ) : liveUntilLedgerSeq === null ? (
+            <p className="text-sm text-zinc-500">No TTL information available.</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+                <div>
+                  <p className="text-xs text-zinc-500">Live Until Ledger</p>
+                  <p className="text-sm font-mono text-zinc-300">{liveUntilLedgerSeq.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-zinc-500">Estimated Expiry</p>
+                  <p className="text-sm text-zinc-300">
+                    {expiryDate ? expiryDate.toLocaleString() : 'Unknown'}
+                  </p>
+                </div>
+                {daysToExpiry !== null && (
+                  <div>
+                    <p className="text-xs text-zinc-500">Time Remaining</p>
+                    <p className="text-sm text-zinc-300">
+                      {daysToExpiry <= 0 ? 'Expired or expiring today' : `${daysToExpiry} day${daysToExpiry === 1 ? '' : 's'}`}
+                    </p>
+                  </div>
+                )}
+              </div>
+              {expirySeverity && (
+                <div
+                  className={
+                    expirySeverity === 'red'
+                      ? 'bg-red-900/20 border border-red-800 rounded-lg p-3'
+                      : 'bg-amber-900/20 border border-amber-800 rounded-lg p-3'
+                  }
+                >
+                  <p className={expirySeverity === 'red' ? 'text-xs text-red-400' : 'text-xs text-amber-400'}>
+                    {expirySeverity === 'red'
+                      ? 'This contract instance expires in under 7 days. Extend its TTL to avoid archival.'
+                      : 'This contract instance expires in under 30 days. Consider extending its TTL.'}
+                  </p>
+                </div>
+              )}
             </>
           )}
         </div>

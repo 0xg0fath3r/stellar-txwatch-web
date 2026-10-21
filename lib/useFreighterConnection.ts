@@ -1,8 +1,28 @@
 import { useState, useEffect } from 'react'
+import { Networks } from '@stellar/stellar-sdk'
+
+export type KnownNetwork = 'PUBLIC' | 'TESTNET' | 'FUTURENET' | 'CUSTOM'
+
+export function getKnownNetworkFromPassphrase(
+  passphrase: string | null | undefined
+): KnownNetwork {
+  if (!passphrase) return 'CUSTOM'
+  switch (passphrase) {
+    case Networks.PUBLIC:
+      return 'PUBLIC'
+    case Networks.TESTNET:
+      return 'TESTNET'
+    case Networks.FUTURENET:
+      return 'FUTURENET'
+    default:
+      return 'CUSTOM'
+  }
+}
 
 export function useFreighterConnection(): { isConnected: boolean; publicKey: string | null; loading: boolean } {
   const [isConnected, setIsConnected] = useState(false)
   const [publicKey, setPublicKey] = useState<string | null>(null)
+  const [networkPassphrase, setNetworkPassphrase] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -21,6 +41,12 @@ export function useFreighterConnection(): { isConnected: boolean; publicKey: str
         const key = await window.freighter?.getPublicKey()
         setPublicKey(key ?? null)
         setIsConnected(true)
+        try {
+          const details = await window.freighter.getNetworkDetails()
+          setNetworkPassphrase(details?.networkPassphrase ?? null)
+        } catch {
+          setNetworkPassphrase(null)
+        }
       } else {
         setIsConnected(false)
       }
@@ -31,5 +57,7 @@ export function useFreighterConnection(): { isConnected: boolean; publicKey: str
     }
   }
 
-  return { isConnected, publicKey, loading }
+  const knownNetwork = getKnownNetworkFromPassphrase(networkPassphrase)
+
+  return { isConnected, publicKey, networkPassphrase, knownNetwork, loading }
 }
