@@ -26,10 +26,11 @@ const ruleTypes: AlertRuleType[] = [
 // CSV export always operates on the full filtered set, not just the visible window.
 function exportCSV(alerts: AlertPayload[]) {
   const rows = [
-    ['Time', 'Rule', 'Tx Hash', 'Function', 'Amount'],
+    ['Time', 'Rule', 'Rule Name', 'Tx Hash', 'Function', 'Amount'],
     ...alerts.map((a) => [
       new Date(a.timestamp).toLocaleString(),
       a.rule_triggered,
+      a.rule_name ?? '',
       a.transaction_hash,
       a.function_name ?? 'N/A',
       a.amount !== undefined ? `${a.amount} XLM` : 'N/A',
@@ -177,7 +178,7 @@ export default function WebhookLog({ alerts, network }: WebhookLogProps) {
                         left: 0,
                         width: '100%',
                         transform: `translateY(${virtualRow.start}px)`,
-                        height: ROW_HEIGHT,
+                        minHeight: ROW_HEIGHT,
                         alignItems: 'center',
                         gridTemplateColumns: '160px 180px 1fr 140px 120px',
                       }}
@@ -185,8 +186,13 @@ export default function WebhookLog({ alerts, network }: WebhookLogProps) {
                       <div role="cell" className="pr-4 text-zinc-400 whitespace-nowrap text-xs">
                         {formatDateTime(alert.timestamp)}
                       </div>
-                      <div role="cell" className="pr-4">
+                      <div role="cell" className="pr-4 flex flex-col gap-0.5 justify-center">
                         <AlertRuleBadge type={alert.rule_triggered as AlertRuleType} />
+                        {alert.rule_name && (
+                          <span className="text-xs text-zinc-400 truncate" title={alert.rule_name}>
+                            {alert.rule_name}
+                          </span>
+                        )}
                       </div>
                       <div role="cell" className="pr-4">
                         <a

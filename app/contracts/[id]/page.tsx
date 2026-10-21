@@ -1,65 +1,62 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { WatchedContract, AlertPayload, AlertRule } from '@/types'
 import { getContract, deleteContract, getAlerts, saveContract } from '@/lib/storage'
-import { truncateId, explorerContractUrl, isValidUrl } from '@/lib/stellar'
-import { formatDate, formatRuleSummary } from '@/lib/format'
 import { useAnalytics } from '@/lib/useAnalytics'
-import NetworkBadge from '@/components/NetworkBadge'
-import AlertRuleBadge from '@/components/AlertRuleBadge'
 import WebhookLog from '@/components/WebhookLog'
-import RuleBuilder from '@/components/RuleBuilder'
-import CopyButton from '@/components/CopyButton'
-import MetadataSection from '@/components/MetadataSection'
+import ContractHeader from '@/components/ContractHeader'
+import ContractMetadataCards from '@/components/ContractMetadataCards'
+import ActiveRulesList from '@/components/ActiveRulesList'
+import EditDetailsModal from '@/components/EditDetailsModal'
+import EditRulesModal from '@/components/EditRulesModal'
+import DeleteContractModal from '@/components/DeleteContractModal'
+import ContractDetailLoading from './loading'
 
 export default function ContractDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const { trackEvent } = useAnalytics()
+
   const [contract, setContract] = useState<WatchedContract | null>(null)
   const [alerts, setAlerts] = useState<AlertPayload[]>([])
-  const [mounted, setMounted] = useState(false)
   const [contractNotFound, setContractNotFound] = useState(false)
+
   const [showDelete, setShowDelete] = useState(false)
+  const [showEditDetails, setShowEditDetails] = useState(false)
   const [showEditRules, setShowEditRules] = useState(false)
   const [editedRules, setEditedRules] = useState<AlertRule[]>([])
   const [rulesError, setRulesError] = useState<string | null>(null)
-  const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
-  
+const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
+  const [searchHash, setSearchHash] = useState('')
+   
   // Metadata editing state
   const [showEditMetadata, setShowEditMetadata] = useState(false)
   const [editedLabel, setEditedLabel] = useState('')
   const [editedWebhookUrl, setEditedWebhookUrl] = useState('')
+  const [editedWebhookSecret, setEditedWebhookSecret] = useState('')
+  const [showWebhookSecret, setShowWebhookSecret] = useState(false)
   const [metadataError, setMetadataError] = useState<string | null>(null)
 
   useEffect(() => {
     const c = getContract(params.id)
-    if (!c) { 
-      setContractNotFound(true)
-      setMounted(true)
-      return 
-    }
+    if (!c) { setContractNotFound(true); return }
     setContract(c)
     setAlerts(getAlerts(params.id))
-    setMounted(true)
-  }, [params.id, router])
+  }, [params.id])
+
+  const filteredAlerts = useMemo(() => {
+    if (!searchHash) return alerts
+    const searchLower = searchHash.toLowerCase()
+    return alerts.filter(a => a.transaction_hash.toLowerCase().includes(searchLower))
+  }, [alerts, searchHash])
 
   function handleDelete() {
     deleteContract(params.id)
     router.push('/contracts')
   }
 
-  function openEditRules() {
-    setEditedRules(contract!.rules)
-    setRulesError(null)
-    setShowEditRules(true)
-    trackEvent('rule_edit_opened', { contractId: params.id, ruleCount: contract!.rules.length })
-  }
-
-  function saveRules() {
-    if (editedRules.length === 0) { setRulesError('Add at least one rule'); return }
-    const updated = { ...contract!, rules: editedRules }
+  function handleSaveDetails(updated: WatchedContract) {
     saveContract(updated)
     setContract(updated)
     setShowEditRules(false)
@@ -87,6 +84,8 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   function openEditMetadata() {
     setEditedLabel(contract!.label)
     setEditedWebhookUrl(contract!.webhook_url)
+    setEditedWebhookSecret(contract!.webhook_secret || '')
+    setShowWebhookSecret(false)
     setMetadataError(null)
     setShowEditMetadata(true)
     trackEvent('metadata_edit_opened', { contractId: params.id })
@@ -121,7 +120,8 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
     const updated = { 
       ...contract!, 
       label: trimmedLabel,
-      webhook_url: trimmedWebhookUrl
+      webhook_url: trimmedWebhookUrl,
+      webhook_secret: editedWebhookSecret.trim() || undefined,
     }
     saveContract(updated)
     setContract(updated)
@@ -130,7 +130,7 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   }
 
   function hasMetadataChanges(): boolean {
-    return editedLabel !== contract?.label || editedWebhookUrl !== contract?.webhook_url
+    return editedLabel !== contract?.label || editedWebhookUrl !== contract?.webhook_url || editedWebhookSecret !== (contract?.webhook_secret || '')
   }
 
   function handleCancelMetadataEdit() {
@@ -142,8 +142,6 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
       setShowEditMetadata(false)
     }
   }
-
-  if (!mounted) return null
 
   if (contractNotFound) {
     return (
@@ -172,7 +170,7 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
     )
   }
 
-  if (!contract) return null
+  if (!contract) return <ContractDetailLoading />
 
   return (
     <div className="space-y-8 max-w-4xl">
@@ -195,22 +193,22 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
             <CopyButton text={contract.contract_id} />
           </div>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <button
             onClick={openEditMetadata}
-            className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+            className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
           >
             Edit Details
           </button>
           <button
             onClick={openEditRules}
-            className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+            className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
           >
             Edit Rules
           </button>
           <button
             onClick={() => setShowDelete(true)}
-            className="px-3 py-1.5 rounded-lg border border-red-800 hover:border-red-600 text-sm text-red-400 hover:text-red-300 transition-colors"
+            className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg border border-red-800 hover:border-red-600 text-sm text-red-400 hover:text-red-300 transition-colors"
           >
             Delete
           </button>
@@ -233,6 +231,15 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
             {contract.webhook_url}
           </a>
         </div>
+        {contract.webhook_secret && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs text-zinc-500">Webhook Secret</p>
+              <CopyButton text={contract.webhook_secret} />
+            </div>
+            <p className="text-sm text-zinc-300 font-mono">••••••••{contract.webhook_secret.slice(-4)}</p>
+          </div>
+        )}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
           <p className="text-xs text-zinc-500 mb-1">Registered</p>
           <p className="text-sm text-zinc-300">{formatDate(contract.created_at)}</p>
@@ -261,6 +268,9 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
             {contract.rules.map((rule, i) => (
               <div key={i} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
                 <AlertRuleBadge type={rule.type} />
+                {rule.name && (
+                  <span className="text-xs font-medium text-zinc-200">{rule.name}</span>
+                )}
                 {formatRuleSummary(rule) && (
                   <span className="text-xs font-mono text-zinc-400">{formatRuleSummary(rule)}</span>
                 )}
@@ -272,9 +282,32 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
 
       {/* Alert History */}
       <div>
-        <h2 className="text-lg font-semibold text-zinc-100 mb-3">Alert History</h2>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+          <h2 className="text-lg font-semibold text-zinc-100">Alert History</h2>
+          <div className="relative w-full sm:w-64">
+            <label htmlFor="hash-search" className="sr-only">Search by transaction hash</label>
+            <input
+              id="hash-search"
+              type="text"
+              placeholder="Search by transaction hash..."
+              value={searchHash}
+              onChange={(e) => setSearchHash(e.target.value)}
+              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+            {searchHash && (
+              <button
+                onClick={() => setSearchHash('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-          <WebhookLog alerts={alerts} network={contract.network} />
+          <WebhookLog alerts={filteredAlerts} network={contract.network} />
         </div>
       </div>
 
@@ -319,6 +352,33 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
                 />
                 <p className="text-xs text-zinc-500 mt-1">
                   Must be a valid HTTP or HTTPS URL
+                </p>
+              </div>
+
+              {/* Webhook Secret field */}
+              <div>
+                <label htmlFor="edit-webhook-secret" className="block text-sm font-medium text-zinc-300 mb-2">
+                  Webhook Secret (Optional)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="edit-webhook-secret"
+                    type={showWebhookSecret ? 'text' : 'password'}
+                    value={editedWebhookSecret}
+                    onChange={(e) => setEditedWebhookSecret(e.target.value)}
+                    placeholder="Your HMAC secret key"
+                    className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowWebhookSecret(!showWebhookSecret)}
+                    className="px-3 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors whitespace-nowrap"
+                  >
+                    {showWebhookSecret ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Used to sign payloads with HMAC-SHA256. Receivers can verify the X-TxWatch-Signature header.
                 </p>
               </div>
             </div>
@@ -382,64 +442,27 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
         </div>
       )}
 
-      {/* Edit Rules Modal */}
       {showEditRules && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-zinc-100">Edit Alert Rules</h3>
-            <RuleBuilder
-              rules={editedRules}
-              onChange={setEditedRules}
-              onRulesChanged={(rules, action) =>
-                trackEvent(action === 'remove' ? 'rule_removed' : 'rule_added', {
-                  contractId: params.id,
-                  ruleCount: rules.length,
-                })
-              }
-            />
-            {rulesError && <p className="text-xs text-red-400">{rulesError}</p>}
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={saveRules}
-                className="flex-1 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
-              >
-                Save Rules
-              </button>
-              <button
-                onClick={handleCancelEdit}
-                className="flex-1 px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+        <EditRulesModal
+          initialRules={contract.rules}
+          onSave={handleSaveRules}
+          onClose={() => setShowEditRules(false)}
+          onRuleEvent={(rules, action) =>
+            trackEvent(action === 'remove' ? 'rule_removed' : 'rule_added', {
+              contractId: params.id,
+              ruleCount: rules.length,
+            })
+          }
+        />
       )}
 
-      {/* Unsaved Changes Warning Modal */}
-      {showUnsavedWarning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 max-w-sm w-full space-y-4">
-            <h3 className="text-lg font-semibold text-zinc-100">Discard Changes?</h3>
-            <p className="text-sm text-zinc-400">
-              You have unsaved changes to your alert rules. Are you sure you want to discard them?
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={confirmDiscard}
-                className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-sm font-medium text-white transition-colors"
-              >
-                Discard
-              </button>
-              <button
-                onClick={() => setShowUnsavedWarning(false)}
-                className="flex-1 px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
-              >
-                Keep Editing
-              </button>
-            </div>
-          </div>
-        </div>
+      {showDelete && (
+        <DeleteContractModal
+          contractLabel={contract.label}
+          alertCount={alerts.length}
+          onConfirm={handleDelete}
+          onClose={() => setShowDelete(false)}
+        />
       )}
     </div>
   )

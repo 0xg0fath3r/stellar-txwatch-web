@@ -102,9 +102,23 @@ See [Stellar integration](#stellar-integration) for implementation details.
 
 ## Environment variables
 
-| Variable | Description |
-|---|---|
-| `NEXT_PUBLIC_API_URL` | Base URL of the txwatch-core API (optional) |
+Copy `.env.example` to `.env.local` and fill in the values you need. Every variable is optional; with none set, the dashboard runs in localStorage-only mode against the public Stellar endpoints.
+
+| Variable | Required | Default | Example | Scope | Description |
+|---|---|---|---|---|---|
+| `NEXT_PUBLIC_API_URL` | No | `''` (empty, localStorage-only mode) | `http://localhost:8000` | Build-time | Base URL of the [stellar-txwatch-core](https://github.com/Tx-wat/stellar-txwatch-core) API. Prepended to every `apiFetch` call in `lib/api.ts`. |
+| `NEXT_PUBLIC_HORIZON_URL` | No | Official Horizon URL for the selected network (see `HORIZON_URLS` in `lib/stellar.ts`) | `https://horizon-testnet.stellar.org` | Build-time | Override for the Horizon REST endpoint. |
+| `NEXT_PUBLIC_SOROBAN_RPC_URL` | No | Official Soroban RPC URL for the selected network (see `SOROBAN_RPC_URLS` in `lib/stellar.ts`) | `https://soroban-testnet.stellar.org` | Build-time | Override for the Soroban RPC endpoint. |
+| `WEBHOOK_TEST_URL` | No | Unset | `http://localhost:3001/webhooks` | Runtime | Local endpoint for testing webhook delivery, for example one of the receivers in [`examples/`](./examples). |
+| `DEBUG_STORAGE` | No | `false` | `true` | Runtime | When `true`, `lib/storageLogger.ts` logs localStorage parse errors even when `NODE_ENV` is `production` (they are always logged in development). Because it is not a `NEXT_PUBLIC_*` variable, it only applies in Node contexts such as tests, not in the browser bundle. |
+| `NODE_ENV` | No (set by Next.js) | `development` for `npm run dev`, `production` for `npm run build` / `npm start` | `production` | Runtime | Standard Node/Next.js environment flag. Do not set it manually in `.env.local`. |
+
+### Build-time vs runtime
+
+- **Build-time (`NEXT_PUBLIC_*`)**: Next.js inlines these values into the client JavaScript bundle when you run `npm run build`. Changing them requires a rebuild; restarting the server is not enough. They are visible to anyone who loads the page, so never put secrets in a `NEXT_PUBLIC_*` variable.
+- **Runtime (everything else)**: read from `process.env` on the server when the code runs, and never exposed to the browser bundle. Changing them only requires restarting the process.
+
+> **Note:** `NEXT_PUBLIC_HORIZON_URL`, `NEXT_PUBLIC_SOROBAN_RPC_URL` and `WEBHOOK_TEST_URL` are documented in `.env.example` but not yet read by the application code. The endpoints are currently taken from the constants in `lib/stellar.ts`.
 
 ## Stellar integration
 
