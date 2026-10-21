@@ -83,7 +83,7 @@ export default function NewContractPage() {
   async function checkNetworkMismatch(selectedNetwork: Network) {
     if (!window.freighter) return
     try {
-      const walletNetwork = await window.freighter.getNetwork()
+      const walletNetwork = await window.freighter?.getNetwork()
       const networkMap: Record<string, string> = {
         testnet: 'TESTNET',
         mainnet: 'PUBLIC',
