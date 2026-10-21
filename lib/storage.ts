@@ -1,9 +1,15 @@
 import { WatchedContract, AlertPayload, Network } from '@/types'
+import {
+  STORAGE_QUOTA_BYTES,
+  MAX_ALERTS_PER_CONTRACT,
+  ALERTS_RETENTION_DAYS,
+} from './constants'
 
 const CONTRACTS_KEY = 'txwatch_contracts'
 const ALERTS_KEY = 'txwatch_alerts'
+const SETTINGS_KEY = 'txwatch_settings'
 const STORAGE_VERSION_KEY = 'txwatch_storage_version'
-const CURRENT_STORAGE_VERSION = 1
+const CURRENT_STORAGE_VERSION = 2
 
 function getStorage(): Storage | undefined {
   if (typeof window !== 'undefined') return window.localStorage
@@ -19,11 +25,6 @@ function load<T>(key: string): T[] {
     return []
   }
 }
-
-const STORAGE_QUOTA_BYTES = 5 * 1024 * 1024 // 5MB typical limit
-const MAX_ALERTS_PER_CONTRACT = 500
-const ALERTS_RETENTION_DAYS = 90
-
 function getStorageSize(): number {
   const storage = getStorage()
   if (!storage) return 0
@@ -39,7 +40,7 @@ function getStorageSize(): number {
   return size
 }
 
-function pruneOldAlerts() {
+function pruneOldAlerts(): void {
   const storage = getStorage()
   if (!storage) return
   const cutoff = Date.now() - ALERTS_RETENTION_DAYS * 24 * 60 * 60 * 1000
@@ -50,7 +51,7 @@ function pruneOldAlerts() {
   }
 }
 
-function trimAlertsToCutoff(cutoff: number) {
+function trimAlertsToCutoff(cutoff: number): void {
   const storage = getStorage()
   if (!storage) return
   const alerts = load<AlertPayload>(ALERTS_KEY)
@@ -60,7 +61,7 @@ function trimAlertsToCutoff(cutoff: number) {
   }
 }
 
-function save<T>(key: string, data: T[]) {
+function save<T>(key: string, data: T[]): void {
   const storage = getStorage()
   if (!storage) return
 
@@ -93,13 +94,13 @@ function getStorageVersion(): number {
   return parseInt(storage.getItem(STORAGE_VERSION_KEY) ?? '0', 10)
 }
 
-function setStorageVersion(version: number) {
+function setStorageVersion(version: number): void {
   const storage = getStorage()
   if (!storage) return
   storage.setItem(STORAGE_VERSION_KEY, version.toString())
 }
 
-export function migrateStorage(migrations: Record<number, () => void>) {
+export function migrateStorage(migrations: Record<number, () => void>): void {
   const currentVersion = getStorageVersion()
   for (let v = currentVersion + 1; v <= CURRENT_STORAGE_VERSION; v++) {
     if (migrations[v]) {
@@ -107,6 +108,92 @@ export function migrateStorage(migrations: Record<number, () => void>) {
     }
   }
   setStorageVersion(CURRENT_STORAGE_VERSION)
+}
+
+/**
+ * Migration to v2:
+ * - Normalizes LargeTransfer rules that only have `threshold_xlm` into the
+ *   token-denominated shape (`asset` + `threshold`), while keeping
+ *   `threshold_xlm` for backwards compatibility.
+ * - Ensures settings exist with the default explorer preference.
+ */
+export function migrateToV2() {
+  const storage = getStorage()
+  if (!storage) return
+
+  const contracts = load<WatchedContract>(CONTRACTS_KEY)
+  let changed = false
+  const migrated = contracts.map((contract) => {
+    const rules = (contract as { rules?: unknown }).rules
+    if (!Array.isArray(rules)) return contract
+
+    let rulesChanged = false
+    const nextRules = rules.map((rule) => {
+      if (!rule || typeof rule !== 'object') return rule
+      const r = rule as Record<string, unknown>
+      if (r.type !== 'LargeTransfer') return rule
+
+      const hasThresholdXlm = typeof r.threshold_xlm === 'number'
+      const hasThreshold = typeof r.threshold === 'number'
+      const hasAsset = typeof r.asset === 'string' && r.asset.length > 0
+
+      if (!hasThresholdXlm || (hasThreshold && hasAsset)) return rule
+
+      rulesChanged = true
+      return {
+        ...r,
+        // Keep threshold_xlm for backwards compatibility.
+        threshold_xlm: hasThresholdXlm ? r.threshold_xlm : undefined,
+        // Default to native XLM when no asset was specified.
+        asset: hasAsset ? r.asset : 'native',
+        threshold: hasThreshold ? r.threshold : r.threshold_xlm,
+      }
+    })
+
+    if (!rulesChanged) return contract
+    changed = true
+    return { ...contract, rules: nextRules } as WatchedContract
+  })
+
+  if (changed) {
+    storage.setItem(CONTRACTS_KEY, JSON.stringify(migrated))
+  }
+
+  if (storage.getItem(SETTINGS_KEY) === null) {
+    storage.setItem(SETTINGS_KEY, JSON.stringify(DEFAULT_SETTINGS))
+  }
+}
+
+export function getSettings(): AppSettings {
+  const storage = getStorage()
+  if (!storage) return { ...DEFAULT_SETTINGS }
+  try {
+    const raw = storage.getItem(SETTINGS_KEY)
+    if (!raw) return { ...DEFAULT_SETTINGS }
+    const parsed = JSON.parse(raw) as Partial<AppSettings>
+    return { ...DEFAULT_SETTINGS, ...parsed }
+  } catch {
+    return { ...DEFAULT_SETTINGS }
+  }
+}
+
+export function saveSettings(settings: Partial<AppSettings>): AppSettings {
+  const storage = getStorage()
+  const merged = { ...getSettings(), ...settings }
+  if (storage) {
+    storage.setItem(SETTINGS_KEY, JSON.stringify(merged))
+  }
+  return merged
+}
+
+export function onSettingsChange(callback: () => void): () => void {
+  const handler = (e: StorageEvent) => {
+    if (e.key === SETTINGS_KEY) {
+      callback()
+    }
+  }
+  window.addEventListener('storage', handler)
+  return () => window.removeEventListener('storage', handler)
 }
 
 export function getContracts(): WatchedContract[] {
@@ -131,13 +218,13 @@ export function getContractByIdAndNetwork(
   return getContracts().find((c) => c.contract_id === contractId && c.network === network)
 }
 
-export function saveContract(contract: WatchedContract) {
+export function saveContract(contract: WatchedContract): void {
   const contracts = getContracts().filter((c) => c.id !== contract.id)
-  const updated = { ...contract, updated_at: Date.now() }
+  const updated: WatchedContract = { ...contract, updated_at: Date.now() }
   save(CONTRACTS_KEY, [...contracts, updated])
 }
 
-export function deleteContract(id: string) {
+export function deleteContract(id: string): void {
   const contract = getContract(id)
   save(CONTRACTS_KEY, getContracts().filter((c) => c.id !== id))
   if (contract) {
@@ -145,12 +232,12 @@ export function deleteContract(id: string) {
   }
 }
 
-export function deleteAlerts(contractId: string) {
+export function deleteAlerts(contractId: string): void {
   const alerts = load<AlertPayload>(ALERTS_KEY)
   save(ALERTS_KEY, alerts.filter((a) => a.contract_id !== contractId))
 }
 
-export function deleteAlert(alertId: string) {
+export function deleteAlert(alertId: string): void {
   const alerts = load<AlertPayload & { id?: string }>(ALERTS_KEY)
   save(ALERTS_KEY, alerts.filter((a) => a.id !== alertId))
 }
@@ -166,6 +253,9 @@ export function seedMockAlerts(
   network: Network,
   count = 5
 ): void {
+  if (process.env.NODE_ENV === 'production') return
+  if (typeof window === 'undefined') return
+
   const storage = getStorage()
   if (!storage) return
 
@@ -189,7 +279,7 @@ export function seedMockAlerts(
   save(ALERTS_KEY, [...alerts, ...load<AlertPayload>(ALERTS_KEY)])
 }
 
-export function addAlert(alert: AlertPayload | (AlertPayload & { contractId?: string; id?: string })) {
+export function addAlert(alert: AlertPayload | (AlertPayload & { contractId?: string; id?: string })): void {
   const normalizedAlert = {
     ...alert,
     contract_id: alert.contract_id ?? (alert as { contractId?: string }).contractId,
@@ -202,7 +292,7 @@ export function addAlert(alert: AlertPayload | (AlertPayload & { contractId?: st
   }))
 }
 
-export function deleteAlertsByContractId(contractId: string) {
+export function deleteAlertsByContractId(contractId: string): void {
   const alerts = load<AlertPayload>(ALERTS_KEY)
   save(ALERTS_KEY, alerts.filter((a) => a.contract_id !== contractId))
 }

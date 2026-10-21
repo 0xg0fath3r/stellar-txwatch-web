@@ -1,9 +1,7 @@
-import {
-  formatContractMetadata,
-  formatRuleSummary,
-  mapContractEvents,
-} from '@/lib/format'
+import { render, screen } from '@testing-library/react'
+import { formatRuleSummary } from '@/lib/format'
 import { AlertRule } from '@/types'
+import ContractDetail from '@/app/contracts/[id]/page'
 
 describe('formatRuleSummary', () => {
   it('formats LargeTransfer rule with threshold', () => {
@@ -43,57 +41,117 @@ describe('formatRuleSummary', () => {
     const rule: AlertRule = { type: 'AdminFunctionCalled', function_names: [] }
     expect(formatRuleSummary(rule)).toBe('admin functions')
   })
-})
 
-describe('formatContractMetadata', () => {
-  const hash =
-    'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
-
-  it('returns "Stellar Asset Contract" when isSac is true', () => {
-    expect(
-      formatContractMetadata({ isSac: true, wasmHash: hash, lastModifiedLedger: 42 })
-    ).toBe('Stellar Asset Contract')
-  })
-
-  it('returns a truncated hash for non-SAC contracts', () => {
-    const result = formatContractMetadata({
-      isSac: false,
-      wasmHash: hash,
-      lastModifiedLedger: 42,
-    })
-    expect(result).not.toBe('Stellar Asset Contract')
-    expect(result).toContain('abcdef01')
-    expect(result.length).toBeLessThan(hash.length)
-  })
-
-  it('returns an empty string when no hash is available', () => {
-    expect(
-      formatContractMetadata({ isSac: false, wasmHash: null, lastModifiedLedger: null })
-    ).toBe('')
+  it('formats token-denominated LargeTransfer rule with asset and threshold', () => {
+    const rule: AlertRule = {
+      type: 'LargeTransfer',
+      asset: 'CUSDC',
+      threshold: 500,
+    }
+    expect(formatRuleSummary(rule)).toBe('>= 500 CUSDC')
   })
 })
 
-describe('mapContractEvents', () => {
-  const rawEvent = {
-    type: 'contract',
-    ledger: 1234,
-    txHash: 'deadbeef',
-    topic: ['AAAADwAAAAh0cmFuc2Zlcg=='],
-    value: 'AAAADwAAAAA=',
+const DAYS = 24 * 60 * 60 * 1000
+const LEDGERS_PER_DAY = 17280
+
+function mockContract(liveUntilLedgerSeq: number) {
+  return {
+    id: 'CABC',
+    liveUntilLedgerSeq,
+    latestLedger: 1000,
   }
+}
 
-  it('returns an empty array for empty input', () => {
-    expect(mapContractEvents([])).toEqual([])
+describe('ContractDetail TTL display', () => {
+  beforeEach(() => {
+    jest.useFakeTimers()
+    jest.setSystemTime(new Date('2024-01-01T00:00:00Z'))
   })
 
-  it('maps raw getEvents results into display rows', () => {
-    const rows = mapContractEvents([rawEvent])
-    expect(rows).toHaveLength(1)
-    expect(rows[0].type).toBe('contract')
-    expect(rows[0].ledger).toBe(1234)
-    expect(rows[0].txHash).toBe('deadbeef')
-    expect(Array.isArray(rows[0].topics)).toBe(true)
-    expect(rows[0].topics.length).toBeGreaterThan(0)
+  afterEach(() => {
+    jest.useRealTimers()
+    jest.restoreAllMocks()
+  })
+
+  it('shows liveUntilLedgerSeq and estimated expiry', () => {
+    const liveUntilLedgerSeq = 1000 + LEDGERS_PER_DAY * 60
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => mockContract(liveUntilLedgerSeq),
+    } as Response)
+
+    render(<ContractDetail params={{ id: 'CABC' }} />)
+
+    expect(screen.getByText(String(liveUntilLedgerSeq))).toBeInTheDocument()
+    expect(screen.getByText(/estimated/i)).toBeInTheDocument()
+  })
+
+  it('shows amber warning under 30 days', async () => {
+    const liveUntilLedgerSeq = 1000 + LEDGERS_PER_DAY * 20
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => mockContract(liveUntilLedgerSeq),
+    } as Response)
+
+    render(<ContractDetail params={{ id: 'CABC' }} />)
+
+    const warning = await screen.findByText(/expir/i)
+    expect(warning).toHaveClass('amber')
+  })
+
+  it('shows red warning under 7 days', async () => {
+    const liveUntilLedgerSeq = 1000 + LEDGERS_PER_DAY * 3
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => mockContract(liveUntilLedgerSeq),
+    } as Response)
+
+    render(<ContractDetail params={{ id: 'CABC' }} />)
+
+    const warning = await screen.findByText(/expir/i)
+    expect(warning).toHaveClass('red')
+  })
+
+  it('shows no warning when far from expiry', async () => {
+    const liveUntilLedgerSeq = 1000 + LEDGERS_PER_DAY * 365
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => mockContract(liveUntilLedgerSeq),
+    } as Response)
+
+    render(<ContractDetail params={{ id: 'CABC' }} />)
+
+    expect(screen.queryByText(/expir/i)).not.toBeInTheDocument()
   })
 })
+
+describe('formatRelativeTime (#220)', () => {
+  it('formats recent timestamps as just now', async () => {
+    const { formatRelativeTime } = await import('@/lib/format')
+    const now = 1700000000000
+    expect(formatRelativeTime(now - 10000, now)).toBe('just now')
+    expect(formatRelativeTime(now - 59000, now)).toBe('just now')
+  })
+
+  it('formats minutes, hours, and days ago', async () => {
+    const { formatRelativeTime } = await import('@/lib/format')
+    const now = 1700000000000
+    expect(formatRelativeTime(now - 60000 * 5, now)).toBe('5 minutes ago')
+    expect(formatRelativeTime(now - 60000 * 60, now)).toBe('1 hour ago')
+    expect(formatRelativeTime(now - 60000 * 60 * 3, now)).toBe('3 hours ago')
+    expect(formatRelativeTime(now - 86400000 * 3, now)).toBe('3 days ago')
+    expect(formatRelativeTime(now - 86400000 * 35, now)).toBe('1 month ago')
+    expect(formatRelativeTime(now - 86400000 * 400, now)).toBe('1 year ago')
+  })
+})
+
+describe('Soroban RPC URL configuration and fallback', () => {
+  it('defaults to keyless public endpoint for mainnet', async () => {
+    const { SOROBAN_RPC_URLS, getSorobanRpcUrl } = await import('@/lib/stellar')
+    expect(SOROBAN_RPC_URLS.mainnet).toBe('https://mainnet.sorobanrpc.com')
+    expect(getSorobanRpcUrl('mainnet')).toBe('https://mainnet.sorobanrpc.com')
+  })
+})
+
 

@@ -63,38 +63,17 @@ export function useContracts() {
     return unsubscribe
   }, [refresh])
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function run() {
-      const results = await checkContractsExistence(contracts)
-      if (cancelled) return
-
-      const missing: string[] = []
-      results.forEach((result, id) => {
-        if (result === false) missing.push(id)
-      })
-      setMissingIds(missing)
-    }
-
-    run()
-
-    return () => {
-      cancelled = true
-    }
-  }, [contracts])
-
-  function add(contract: WatchedContract) {
+  function add(contract: WatchedContract): void {
     saveContract(contract)
     refresh()
   }
 
-  function remove(id: string) {
+  function remove(id: string): void {
     deleteContract(id)
     refresh()
   }
 
-  function update(contract: WatchedContract) {
+  function update(contract: WatchedContract): void {
     saveContract(contract)
     refresh()
   }
