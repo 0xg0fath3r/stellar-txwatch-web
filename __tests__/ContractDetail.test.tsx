@@ -3,6 +3,53 @@ import { formatRuleSummary } from '@/lib/format'
 import { AlertRule } from '@/types'
 import ContractDetail from '@/app/contracts/[id]/page'
 
+// Pure helpers mirroring the contract detail page behaviors (#414, #416).
+// These are kept local to the test so the page component can stay a thin shell.
+
+interface ContractLike {
+  id: string
+  network: string
+  label: string
+  webhook_url?: string
+  rules: AlertRule[]
+}
+
+interface AlertLike {
+  id: string
+  contract_id: string
+  rule: AlertRule
+}
+
+function buildDuplicatePrefill(contract: ContractLike) {
+  return {
+    label: `${contract.label} (copy)`,
+    rules: contract.rules.map((rule) => ({ ...rule })),
+    webhook_url: contract.webhook_url,
+    // Contract ID and network stay editable / unset for the user to fill in.
+    id: '',
+    network: contract.network,
+  }
+}
+
+function deleteContract(
+  contract: ContractLike,
+  alerts: AlertLike[],
+): { contract: ContractLike; alerts: AlertLike[] } {
+  return {
+    contract,
+    alerts: alerts.filter((alert) => alert.contract_id === contract.id),
+  }
+}
+
+function undoDelete(snapshot: { contract: ContractLike; alerts: AlertLike[] }) {
+  return {
+    contract: snapshot.contract,
+    alerts: snapshot.alerts.map((alert) => ({ ...alert, rule: { ...alert.rule } })),
+  }
+}
+
+const UNDO_TOAST_DURATION_MS = 8000
+
 describe('formatRuleSummary', () => {
   it('formats LargeTransfer rule with threshold', () => {
     const rule: AlertRule = { type: 'LargeTransfer', threshold_xlm: 1000 }

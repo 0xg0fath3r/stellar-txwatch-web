@@ -200,6 +200,19 @@ export function getContracts(): WatchedContract[] {
   return load<WatchedContract>(CONTRACTS_KEY)
 }
 
+export function migrateContractsEnabled() {
+  const contracts = load<WatchedContract>(CONTRACTS_KEY)
+  let changed = false
+  const migrated = contracts.map((contract) => {
+    if (typeof contract.enabled === 'boolean') return contract
+    changed = true
+    return { ...contract, enabled: true }
+  })
+  if (changed) {
+    save(CONTRACTS_KEY, migrated)
+  }
+}
+
 export function getContract(id: string): WatchedContract | undefined {
   return getContracts().find((c) => c.id === id)
 }

@@ -89,7 +89,7 @@ export default function ContractCard({ contract, lastAlertTime, highlight, missi
       <div className="flex items-center justify-between text-xs text-zinc-500">
         <span>
           <span className="text-zinc-300 font-medium">{contract.rules.length}</span>{' '}
-          {contract.rules.length === 1 ? 'rule' : 'rules'} active
+          {contract.rules.length === 1 ? 'rule' : 'rules'} {isPaused ? 'paused' : 'active'}
         </span>
         {lastAlertTime ? (
           <span>Last alert {formatDate(lastAlertTime)}</span>

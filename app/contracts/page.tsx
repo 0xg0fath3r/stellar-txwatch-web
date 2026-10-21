@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { WatchedContract, Network } from '@/types'
@@ -14,6 +14,7 @@ type NetworkFilter = 'all' | Network
 type SortOption = 'newest' | 'oldest' | 'label-asc' | 'label-desc'
 
 const PAGE_SIZE = 12
+const UNDO_WINDOW_MS = 8000
 
 const NETWORK_LABELS: Record<Network, string> = {
   mainnet: 'Mainnet',
@@ -114,6 +115,45 @@ export default function ContractsPage() {
   useEffect(() => {
     setPage(1)
   }, [networkFilter, search])
+
+  const refreshContracts = useCallback(() => {
+    setAllContracts(getContracts())
+  }, [])
+
+  const clearUndoTimer = useCallback(() => {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current)
+      undoTimerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => clearUndoTimer()
+  }, [clearUndoTimer])
+
+  const handleDelete = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return
+      // Commit any previously pending deletion before starting a new one.
+      clearUndoTimer()
+      removeContractDeferred(ids)
+      refreshContracts()
+      setPendingUndo({ ids, count: ids.length })
+      undoTimerRef.current = setTimeout(() => {
+        undoTimerRef.current = null
+        setPendingUndo(null)
+      }, UNDO_WINDOW_MS)
+    },
+    [clearUndoTimer, refreshContracts]
+  )
+
+  const handleUndo = useCallback(() => {
+    if (!pendingUndo) return
+    clearUndoTimer()
+    restoreContracts(pendingUndo.ids)
+    setPendingUndo(null)
+    refreshContracts()
+  }, [clearUndoTimer, pendingUndo, refreshContracts])
 
   const networkFiltered = useMemo(() => {
     if (networkFilter === 'all') {
@@ -401,6 +441,20 @@ export default function ContractsPage() {
             </div>
           )}
         </>
+      )}
+
+      {pendingUndo && (
+        <Toast
+          message={
+            pendingUndo.count === 1
+              ? 'Contract deleted'
+              : `${pendingUndo.count} contracts deleted`
+          }
+          actionLabel="Undo"
+          onAction={handleUndo}
+          onDismiss={() => setPendingUndo(null)}
+          duration={UNDO_WINDOW_MS}
+        />
       )}
     </div>
   )

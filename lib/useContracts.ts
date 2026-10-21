@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { WatchedContract } from '@/types'
 import { getContracts, saveContract, deleteContract, onContractsChange } from '@/lib/storage'
 import { checkContractExists } from '@/lib/stellar'
@@ -48,6 +48,8 @@ export async function checkContractsExistence(
 
   return results
 }
+
+const UNDO_WINDOW_MS = 8000
 
 export function useContracts() {
   const [contracts, setContracts] = useState<WatchedContract[]>([])

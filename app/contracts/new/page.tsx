@@ -15,6 +15,7 @@ interface FormErrors {
 
 export default function NewContractPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { isConnected, publicKey } = useFreighterConnection()
   const [networkWarning, setNetworkWarning] = useState<string | null>(null)
   const [label, setLabel] = useState('')
@@ -129,6 +130,7 @@ export default function NewContractPage() {
     } catch {
       // ignore storage errors
     }
+    setSaved(true)
     setToast({ message: `Contract "${contract.label}" saved successfully!`, type: 'success' })
     setTimeout(() => {
       router.push(`/contracts/${contract.id}`)
@@ -171,6 +173,15 @@ export default function NewContractPage() {
   return (
     <>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      <ConfirmDialog
+        open={showLeaveConfirm}
+        title="Discard unsaved changes?"
+        message="You have unsaved input on this form. Leaving now will lose your changes, including any alert rules."
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        onConfirm={handleLeaveConfirm}
+        onCancel={handleLeaveCancel}
+      />
       <div className="max-w-2xl mx-auto space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-zinc-100">Add Contract</h1>
@@ -332,7 +343,7 @@ export default function NewContractPage() {
           </button>
           <button
             type="button"
-            onClick={() => router.back()}
+            onClick={() => requestNavigation(null)}
             className="px-4 py-2.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             Cancel
