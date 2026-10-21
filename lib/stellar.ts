@@ -6,11 +6,31 @@ export const HORIZON_URLS: Record<Network, string> = {
   futurenet: 'https://horizon-futurenet.stellar.org',
 }
 
-export const SOROBAN_RPC_URLS: Record<Network, string> = {
-  mainnet: 'https://mainnet.stellar.validationcloud.io/v1/soroban/rpc',
-  testnet: 'https://soroban-testnet.stellar.org',
-  futurenet: 'https://rpc-futurenet.stellar.org',
+const mainnetRpcUrl =
+  process.env.NEXT_PUBLIC_SOROBAN_RPC_URL_MAINNET ||
+  process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ||
+  'https://mainnet.sorobanrpc.com'
+
+if (
+  typeof window !== 'undefined' &&
+  !process.env.NEXT_PUBLIC_SOROBAN_RPC_URL_MAINNET &&
+  !process.env.NEXT_PUBLIC_SOROBAN_RPC_URL
+) {
+  console.warn(
+    '[stellar-txwatch-web] Warning: NEXT_PUBLIC_SOROBAN_RPC_URL_MAINNET is unset. Falling back to keyless public provider https://mainnet.sorobanrpc.com.',
+  )
 }
+
+export const SOROBAN_RPC_URLS: Record<Network, string> = {
+  mainnet: mainnetRpcUrl,
+  testnet: process.env.NEXT_PUBLIC_SOROBAN_RPC_URL_TESTNET || 'https://soroban-testnet.stellar.org',
+  futurenet: process.env.NEXT_PUBLIC_SOROBAN_RPC_URL_FUTURENET || 'https://rpc-futurenet.stellar.org',
+}
+
+export function getSorobanRpcUrl(network: Network): string {
+  return SOROBAN_RPC_URLS[network]
+}
+
 
 export const STELLAR_EXPERT_BASE = 'https://stellar.expert/explorer'
 
