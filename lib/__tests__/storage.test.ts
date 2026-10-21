@@ -1,11 +1,19 @@
+import { vi } from 'vitest';
 import {
   saveContract,
   deleteContract,
   getContracts,
+  getContract,
   saveAlert,
+  addAlert,
   getAlerts,
   deleteAlert,
+  deleteAlerts,
+  deleteAlertsByContractId,
+  migrateStorage,
+  getNetworkDistribution,
 } from '../storage';
+import { WatchedContract, AlertPayload, Network } from '@/types';
 
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -14,8 +22,45 @@ const localStorageMock = (() => {
     setItem:   (key: string, value: string) => { store[key] = value; },
     removeItem:(key: string) => { delete store[key]; },
     clear:     () => { store = {}; },
+    get length() { return Object.keys(store).length; },
+    key:       (i: number) => Object.keys(store)[i] ?? null,
   };
 })();
+
+const CONTRACTS_KEY = 'txwatch_contracts';
+const ALERTS_KEY = 'txwatch_alerts';
+const VERSION_KEY = 'txwatch_storage_version';
+
+function makeContract(overrides: Partial<WatchedContract> = {}): WatchedContract {
+  return {
+    id: 'c1',
+    label: 'Test Contract',
+    contract_id: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA7',
+    network: 'testnet',
+    rules: [],
+    webhook_url: '',
+    created_at: 1000,
+    updated_at: 1000,
+    ...overrides,
+  };
+}
+
+function makeAlert(overrides: Partial<AlertPayload> = {}): AlertPayload {
+  return {
+    label: 'Alert',
+    contract_id: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA7',
+    network: 'testnet',
+    rule_triggered: 'AnyTransaction',
+    transaction_hash: 'tx',
+    timestamp: Date.now(),
+    horizon_link: 'https://horizon-testnet.stellar.org/transactions/tx',
+    ...overrides,
+  };
+}
+
+function readRaw<T>(key: string): T {
+  return JSON.parse(localStorageMock.getItem(key) ?? '[]');
+}
 
 Object.defineProperty(global, 'localStorage', { value: localStorageMock });
 
