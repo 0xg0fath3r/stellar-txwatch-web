@@ -207,22 +207,22 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
             <CopyButton text={contract.contract_id} />
           </div>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <button
             onClick={openEditMetadata}
-            className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+            className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
           >
             Edit Details
           </button>
           <button
             onClick={openEditRules}
-            className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+            className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
           >
             Edit Rules
           </button>
           <button
             onClick={() => setShowDelete(true)}
-            className="px-3 py-1.5 rounded-lg border border-red-800 hover:border-red-600 text-sm text-red-400 hover:text-red-300 transition-colors"
+            className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg border border-red-800 hover:border-red-600 text-sm text-red-400 hover:text-red-300 transition-colors"
           >
             Delete
           </button>
