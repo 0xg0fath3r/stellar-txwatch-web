@@ -39,9 +39,9 @@ export default function FreighterConnect({ onConnect, className = '' }: Freighte
         return
       }
 
-      const connected = await window.freighter.isConnected()
+      const connected = await window.freighter?.isConnected()
       if (connected) {
-        const key = await window.freighter.getPublicKey()
+        const key = await window.freighter?.getPublicKey()
         setPublicKey(key)
         window.__freighterPublicKey = key
         onConnect?.(key)
@@ -66,8 +66,8 @@ export default function FreighterConnect({ onConnect, className = '' }: Freighte
         return
       }
 
-      const key = await window.freighter.getPublicKey()
-      const network = await window.freighter.getNetwork()
+      const key = await window.freighter?.getPublicKey()
+      const network = await window.freighter?.getNetwork()
 
       if (!key || !network) {
         setError('Failed to retrieve wallet information')

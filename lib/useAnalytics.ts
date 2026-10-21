@@ -16,8 +16,7 @@ export type AnalyticsEventName =
   | 'rule_edit_cancelled'
   | 'rule_added'
   | 'rule_removed'
-  | 'metadata_edit_opened'
-  | 'metadata_edit_saved'
+  | 'web_vital'
 
 export interface AnalyticsEventProperties {
   contractId?: string
