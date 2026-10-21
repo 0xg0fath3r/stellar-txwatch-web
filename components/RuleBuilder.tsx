@@ -1,9 +1,15 @@
 'use client'
 
-import { useState } from 'react'
-import { AlertRule, AlertRuleType } from '@/types'
+import { useEffect, useState } from 'react'
+import { AlertRule, AlertRuleType, RuleTemplate } from '@/types'
 import { formatRuleSummary } from '@/lib/format'
 import AlertRuleBadge from './AlertRuleBadge'
+import {
+  getRuleTemplates,
+  saveRuleTemplate,
+  deleteRuleTemplate,
+  onRuleTemplatesChange,
+} from '@/lib/storage'
 
 const RULE_TYPES: AlertRuleType[] = [
   'AnyTransaction',
@@ -30,12 +36,25 @@ interface RuleBuilderProps {
 }
 
 const emptyRule = (): AlertRule => ({ type: 'AnyTransaction' })
+const newTemplateId = () => `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
 export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBuilderProps) {
   const [draft, setDraft] = useState<AlertRule>(emptyRule())
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [warning, setWarning] = useState<string | null>(null)
+  const [templates, setTemplates] = useState<RuleTemplate[]>([])
+  const [showSaveDialog, setShowSaveDialog] = useState(false)
+  const [showLoadDialog, setShowLoadDialog] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+
+  useEffect(() => {
+    setTemplates(getRuleTemplates())
+    const unsubscribe = onRuleTemplatesChange(() => {
+      setTemplates(getRuleTemplates())
+    })
+    return () => unsubscribe()
+  }, [])
 
   function updateDraft(patch: Partial<AlertRule>) {
     setDraft((prev) => ({ ...prev, ...patch }))
@@ -93,7 +112,6 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
         setError('Enter at least one function name')
         return
       }
-      // Sort function names for consistency
       draft.function_names = [...draft.function_names].sort()
     }
     const newRule = { ...draft }
@@ -121,18 +139,49 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
     setDraft(rules[index])
     setEditingIndex(index)
     setError(null)
+    setWarning(null)
   }
 
   function cancelEdit() {
     setDraft(emptyRule())
     setEditingIndex(null)
     setError(null)
+    setWarning(null)
   }
 
   function removeRule(index: number) {
     const updated = rules.filter((_, i) => i !== index)
     onChange(updated)
     onRulesChanged?.(updated, 'remove')
+  }
+
+  // ── Template actions ──────────────────────────────────────────────
+
+  function saveAsTemplate() {
+    if (!templateName.trim()) {
+      setWarning('Enter a template name')
+      return
+    }
+    const template: RuleTemplate = {
+      id: newTemplateId(),
+      name: templateName.trim(),
+      rules: [...rules],
+      created_at: Date.now(),
+    }
+    saveRuleTemplate(template)
+    setTemplateName('')
+    setShowSaveDialog(false)
+    setWarning(null)
+  }
+
+  function loadTemplate(template: RuleTemplate) {
+    onChange([...template.rules])
+    onRulesChanged?.([...template.rules], 'add')
+    setShowLoadDialog(false)
+  }
+
+  function deleteTemplate(id: string) {
+    deleteRuleTemplate(id)
   }
 
   return (
@@ -263,6 +312,109 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Template controls */}
+      {rules.length > 0 && (
+        <div className="flex gap-2 text-xs">
+          <button
+            onClick={() => setShowSaveDialog(true)}
+            className="px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
+          >
+            💾 Save as Template
+          </button>
+          <button
+            onClick={() => setShowLoadDialog(true)}
+            className="px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
+            disabled={templates.length === 0}
+          >
+            📂 Load Template
+          </button>
+        </div>
+      )}
+
+      {/* Save Template Dialog */}
+      {showSaveDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 max-w-sm w-full">
+            <h3 className="text-lg font-semibold text-zinc-100 mb-4">Save Rule Template</h3>
+            <div className="space-y-4">
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Template Name</label>
+              <input
+                type="text"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="e.g. DeFi safety pack"
+                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={saveAsTemplate}
+                className="flex-1 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
+                disabled={!templateName.trim()}
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setShowSaveDialog(false)}
+                className="flex-1 px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Load Template Dialog */}
+      {showLoadDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 max-w-sm w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-zinc-100 mb-4">Load Rule Template</h3>
+            <div className="space-y-3">
+              {templates.length === 0 ? (
+                <p className="text-xs text-zinc-500">No saved templates yet.</p>
+              ) : (
+                templates.map((tpl) => (
+                  <div key={tpl.id} className="p-3 rounded-lg bg-zinc-800 border border-zinc-700 space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-sm font-medium text-zinc-100">{tpl.name}</p>
+                        <p className="text-xs text-zinc-500">{tpl.rules.length} rule{tpl.rules.length !== 1 ? 's' : ''}</p>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteTemplate(tpl.id)
+                        }}
+                        className="text-xs text-zinc-500 hover:text-red-400 transition-colors"
+                        aria-label="Delete template"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => loadTemplate(tpl)}
+                      className="w-full text-left px-3 py-2 rounded-lg border border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors text-sm"
+                    >
+                      Load rules
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="pt-4">
+              <button
+                onClick={() => setShowLoadDialog(false)}
+                className="w-full px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -2,6 +2,7 @@ import { WatchedContract, AlertPayload, Network } from '@/types'
 
 const CONTRACTS_KEY = 'txwatch_contracts'
 const ALERTS_KEY = 'txwatch_alerts'
+const RULE_TEMPLATES_KEY = 'txwatch_rule_templates'
 const STORAGE_VERSION_KEY = 'txwatch_storage_version'
 const CURRENT_STORAGE_VERSION = 1
 
@@ -227,6 +228,36 @@ export function onAlertsChange(callback: () => void): () => void {
 export function onContractsChange(callback: () => void): () => void {
   const handler = (e: StorageEvent) => {
     if (e.key === CONTRACTS_KEY) {
+      callback()
+    }
+  }
+  window.addEventListener('storage', handler)
+  return () => window.removeEventListener('storage', handler)
+}
+
+// ── Rule Templates ──────────────────────────────────────────────────────
+
+export function getRuleTemplates(): RuleTemplate[] {
+  return load<RuleTemplate>(RULE_TEMPLATES_KEY)
+}
+
+export function saveRuleTemplate(template: RuleTemplate) {
+  const templates = getRuleTemplates()
+  const existing = templates.findIndex((t) => t.id === template.id)
+  const updated = existing >= 0
+    ? templates.map((t) => (t.id === template.id ? template : t))
+    : [...templates, template]
+  save(RULE_TEMPLATES_KEY, updated)
+}
+
+export function deleteRuleTemplate(id: string) {
+  const templates = getRuleTemplates()
+  save(RULE_TEMPLATES_KEY, templates.filter((t) => t.id !== id))
+}
+
+export function onRuleTemplatesChange(callback: () => void): () => void {
+  const handler = (e: StorageEvent) => {
+    if (e.key === RULE_TEMPLATES_KEY) {
       callback()
     }
   }

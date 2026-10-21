@@ -36,3 +36,10 @@ export interface AlertPayload {
   timestamp: number
   horizon_link: string
 }
+
+export interface RuleTemplate {
+  id: string
+  name: string
+  rules: AlertRule[]
+  created_at: number
+}
