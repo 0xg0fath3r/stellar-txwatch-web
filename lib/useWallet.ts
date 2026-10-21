@@ -1,39 +1,17 @@
-import { useState, useEffect } from 'react'
-import { isConnected, getPublicKey } from '@stellar/freighter-api'
+import { useFreighterConnection } from './useFreighterConnection'
 
-export function useWallet() {
+export function useWallet(): { publicKey: string | null; isConnected: boolean } {
   const [publicKey, setPublicKey] = useState<string | null>(null)
   const [isConnectedState, setIsConnected] = useState(false)
 
   useEffect(() => {
     let cancelled = false
 
-    async function checkConnection() {
-      try {
-        const connected = await isConnected()
-        if (cancelled) return
-
-        if (!connected) {
-          setIsConnected(false)
-          setPublicKey(null)
-          return
-        }
-
-        const keyResult = await getPublicKey()
-        if (cancelled) return
-
-        if (keyResult.error) {
-          setIsConnected(false)
-          setPublicKey(null)
-          return
-        }
-
-        setIsConnected(true)
-        setPublicKey(keyResult.publicKey)
-      } catch {
-        if (cancelled) return
-        setIsConnected(false)
-        setPublicKey(null)
+    window.freighter?.isConnected().then(async (connected) => {
+      setIsConnected(connected)
+      if (connected) {
+        const key = await window.freighter?.getPublicKey()
+        setPublicKey(key ?? null)
       }
     }
 

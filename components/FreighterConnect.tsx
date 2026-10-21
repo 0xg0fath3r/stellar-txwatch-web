@@ -1,24 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import {
-  isConnected,
-  requestAccess,
-  getPublicKey,
-  getNetworkDetails,
-  signTransaction,
-} from '@stellar/freighter-api'
+import { Networks } from '@stellar/stellar-sdk'
 
-const WALLET_STORAGE_KEY = 'freighter_public_key'
-
-type FreighterErrorState = 'not-installed' | 'not-allowed' | 'locked' | 'unknown' | null
-
-function classifyError(err: unknown): { state: FreighterErrorState; message: string } {
-  const raw = err instanceof Error ? err.message : String(err ?? '')
-  const message = raw.toLowerCase()
-
-  if (message.includes('locked') || message.includes('unlock')) {
-    return { state: 'locked', message: 'Unlock Freighter and try again' }
+declare global {
+  interface Window {
+    freighter?: {
+      isConnected: () => Promise<boolean>
+      getPublicKey: () => Promise<string>
+      getNetworkDetails: () => Promise<{ networkPassphrase: string }>
+    }
+    __freighterPublicKey?: string | null
   }
   if (
     message.includes('denied') ||
@@ -59,9 +51,12 @@ export default function FreighterConnect({ onConnect, className = '' }: Freighte
         return
       }
 
-      const keyResult = await getPublicKey()
-      if (keyResult.error || !keyResult.publicKey) {
-        return
+      const connected = await window.freighter?.isConnected()
+      if (connected) {
+        const key = await window.freighter?.getPublicKey()
+        setPublicKey(key)
+        window.__freighterPublicKey = key
+        onConnect?.(key)
       }
 
       setPublicKey(keyResult.publicKey)
@@ -88,33 +83,24 @@ export default function FreighterConnect({ onConnect, className = '' }: Freighte
         return
       }
 
-      const access = await requestAccess()
-      if (access.error || !access.address) {
-        const classified = classifyError(access.error)
-        setErrorState(classified.state)
-        setError(classified.message)
+      const key = await window.freighter?.getPublicKey()
+      const network = await window.freighter?.getNetwork()
+
+      if (!key || !networkPassphrase) {
+        setError('Failed to retrieve wallet information')
         return
       }
 
-      const keyResult = await getPublicKey()
-      if (keyResult.error || !keyResult.publicKey) {
-        const classified = classifyError(keyResult.error)
-        setErrorState(classified.state)
-        setError(classified.message)
+      const knownPassphrases = [Networks.PUBLIC, Networks.TESTNET, Networks.FUTURENET]
+      if (!knownPassphrases.includes(networkPassphrase)) {
+        setError('Wallet is on a custom network')
         return
       }
 
-      const network = await getNetworkDetails()
-      if (network.error) {
-        const classified = classifyError(network.error)
-        setErrorState(classified.state)
-        setError(classified.message)
-        return
-      }
-
-      setPublicKey(keyResult.publicKey)
-      localStorage.setItem(WALLET_STORAGE_KEY, keyResult.publicKey)
-      onConnect?.(keyResult.publicKey)
+      setPublicKey(key)
+      window.__freighterPublicKey = key
+      localStorage.setItem(WALLET_STORAGE_KEY, key)
+      onConnect?.(key)
     } catch (err) {
       const classified = classifyError(err)
       setErrorState(classified.state)

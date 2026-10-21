@@ -8,22 +8,110 @@ export const HORIZON_URLS: Record<Network, string> = {
   futurenet: 'https://horizon-futurenet.stellar.org',
 }
 
-export const SOROBAN_RPC_URLS: Record<Network, string> = {
-  mainnet: 'https://mainnet.stellar.validationcloud.io/v1/soroban/rpc',
-  testnet: 'https://soroban-testnet.stellar.org',
-  futurenet: 'https://rpc-futurenet.stellar.org',
+const mainnetRpcUrl =
+  process.env.NEXT_PUBLIC_SOROBAN_RPC_URL_MAINNET ||
+  process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ||
+  'https://mainnet.sorobanrpc.com'
+
+if (
+  typeof window !== 'undefined' &&
+  !process.env.NEXT_PUBLIC_SOROBAN_RPC_URL_MAINNET &&
+  !process.env.NEXT_PUBLIC_SOROBAN_RPC_URL
+) {
+  console.warn(
+    '[stellar-txwatch-web] Warning: NEXT_PUBLIC_SOROBAN_RPC_URL_MAINNET is unset. Falling back to keyless public provider https://mainnet.sorobanrpc.com.',
+  )
 }
+
+export const SOROBAN_RPC_URLS: Record<Network, string> = {
+  mainnet: mainnetRpcUrl,
+  testnet: process.env.NEXT_PUBLIC_SOROBAN_RPC_URL_TESTNET || 'https://soroban-testnet.stellar.org',
+  futurenet: process.env.NEXT_PUBLIC_SOROBAN_RPC_URL_FUTURENET || 'https://rpc-futurenet.stellar.org',
+}
+
+export function getSorobanRpcUrl(network: Network): string {
+  return SOROBAN_RPC_URLS[network]
+}
+
 
 export const STELLAR_EXPERT_BASE = 'https://stellar.expert/explorer'
 
-export function explorerTxUrl(network: Network, txHash: string): string {
-  const net = network === 'mainnet' ? 'public' : network
-  return `${STELLAR_EXPERT_BASE}/${net}/tx/${txHash}`
+export type ExplorerId = 'stellar-expert' | 'stellar-chain' | 'horizon'
+
+export interface ExplorerMeta {
+  id: ExplorerId
+  name: string
+  description: string
 }
 
-export function explorerContractUrl(network: Network, contractId: string): string {
-  const net = network === 'mainnet' ? 'public' : network
-  return `${STELLAR_EXPERT_BASE}/${net}/contract/${contractId}`
+export const EXPLORERS: ExplorerMeta[] = [
+  {
+    id: 'stellar-expert',
+    name: 'Stellar Expert',
+    description: 'Rich explorer with contract and transaction details.',
+  },
+  {
+    id: 'stellar-chain',
+    name: 'StellarChain',
+    description: 'Alternative block explorer for the Stellar network.',
+  },
+  {
+    id: 'horizon',
+    name: 'Horizon (raw JSON)',
+    description: 'View the raw Horizon API response for the transaction.',
+  },
+]
+
+export const DEFAULT_EXPLORER: ExplorerId = 'stellar-expert'
+
+export function isExplorerId(value: unknown): value is ExplorerId {
+  return (
+    value === 'stellar-expert' ||
+    value === 'stellar-chain' ||
+    value === 'horizon'
+  )
+}
+
+function stellarExpertNet(network: Network): string {
+  return network === 'mainnet' ? 'public' : network
+}
+
+function stellarChainNet(network: Network): string {
+  return network === 'mainnet' ? 'public' : network
+}
+
+export function explorerTxUrl(
+  network: Network,
+  txHash: string,
+  explorer: ExplorerId = DEFAULT_EXPLORER,
+): string {
+  switch (explorer) {
+    case 'stellar-chain':
+      return `https://stellarchain.io/${stellarChainNet(network)}/tx/${txHash}`
+    case 'horizon':
+      return `${HORIZON_URLS[network]}/transactions/${txHash}`
+    case 'stellar-expert':
+    default:
+      return `${STELLAR_EXPERT_BASE}/${stellarExpertNet(network)}/tx/${txHash}`
+  }
+}
+
+export function explorerContractUrl(
+  network: Network,
+  contractId: string,
+  explorer: ExplorerId = DEFAULT_EXPLORER,
+): string {
+  switch (explorer) {
+    case 'stellar-chain':
+      return `https://stellarchain.io/${stellarChainNet(network)}/contracts/${contractId}`
+    case 'horizon':
+      // Horizon does not expose contracts directly; fall back to the account
+      // endpoint which returns the raw JSON for the contract's account.
+      return `${HORIZON_URLS[network]}/accounts/${contractId}`
+    case 'stellar-expert':
+    default:
+      return `${STELLAR_EXPERT_BASE}/${stellarExpertNet(network)}/contract/${contractId}`
+  }
 }
 
 export function truncateId(id: string, chars = 8): string {
@@ -53,59 +141,5 @@ export function isValidUrl(url: string): boolean {
     return u.protocol === 'http:' || u.protocol === 'https:'
   } catch {
     return false
-  }
-}
-
-export function getSorobanServer(network: Network): SorobanRpc.Server {
-  return new SorobanRpc.Server(SOROBAN_RPC_URLS[network])
-}
-
-export function getHorizonServer(network: Network): Horizon.Server {
-  return new Horizon.Server(HORIZON_URLS[network])
-}
-
-/**
- * Fetches the contract WASM via the Soroban RPC server and parses its spec
- * to return the list of exported function names.
- *
- * Returns `null` on any failure so callers can fall back to free text input.
- */
-export async function fetchContractSpec(
-  network: Network,
-  contractId: string,
-): Promise<string[] | null> {
-  try {
-    if (!isValidContractId(contractId)) return null
-
-    const server = getSorobanServer(network)
-
-    const ledgerKey = contract.getFootprintData ? undefined : undefined
-    void ledgerKey
-
-    const instance = await server.getContractData(
-      contractId,
-      contract.ScVal.scvLedgerKeyContractInstance(),
-      SorobanRpc.Durability.Persistent,
-    )
-
-    const contractInstance = instance?.val
-    if (!contractInstance || contractInstance.switch().name !== 'scvContractInstance') {
-      return null
-    }
-
-    const executable = contractInstance.instance().executable()
-    if (executable.switch().name !== 'contractExecutableWasm') {
-      return null
-    }
-
-    const wasmHash = executable.wasmHash()
-    const wasmResponse = await server.getContractWasmByHash(wasmHash, 'base64')
-    const wasmBytes = Buffer.from(wasmResponse, 'base64')
-
-    const spec = contract.Spec.fromWasm(wasmBytes)
-    const funcs = spec.funcs()
-    return funcs.map((fn) => fn.name().toString())
-  } catch {
-    return null
   }
 }

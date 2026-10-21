@@ -1,17 +1,28 @@
 import { useState, useEffect } from 'react'
-import { isConnected, getPublicKey, isAllowed } from '@stellar/freighter-api'
+import { Networks } from '@stellar/stellar-sdk'
 
-export type FreighterStatus =
-  | 'idle'
-  | 'connected'
-  | 'not-installed'
-  | 'not-allowed'
-  | 'locked'
-  | 'error'
+export type KnownNetwork = 'PUBLIC' | 'TESTNET' | 'FUTURENET' | 'CUSTOM'
 
-export function useFreighterConnection() {
-  const [isConnectedState, setIsConnected] = useState(false)
+export function getKnownNetworkFromPassphrase(
+  passphrase: string | null | undefined
+): KnownNetwork {
+  if (!passphrase) return 'CUSTOM'
+  switch (passphrase) {
+    case Networks.PUBLIC:
+      return 'PUBLIC'
+    case Networks.TESTNET:
+      return 'TESTNET'
+    case Networks.FUTURENET:
+      return 'FUTURENET'
+    default:
+      return 'CUSTOM'
+  }
+}
+
+export function useFreighterConnection(): { isConnected: boolean; publicKey: string | null; loading: boolean } {
+  const [isConnected, setIsConnected] = useState(false)
   const [publicKey, setPublicKey] = useState<string | null>(null)
+  const [networkPassphrase, setNetworkPassphrase] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<FreighterStatus>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -39,42 +50,18 @@ export function useFreighterConnection() {
         setPublicKey(null)
         return
       }
-
-      if (!connectionResult.isConnected) {
-        setStatus('not-installed')
-        setIsConnected(false)
-        setPublicKey(null)
-        return
-      }
-
-      const allowedResult = await isAllowed()
-      if (allowedResult.error) {
-        setStatus('error')
-        setError(allowedResult.error.message || 'Unable to check Freighter permissions')
-        setIsConnected(false)
-        setPublicKey(null)
-        return
-      }
-
-      if (!allowedResult.isAllowed) {
-        setStatus('not-allowed')
-        setIsConnected(false)
-        setPublicKey(null)
-        return
-      }
-
-      const keyResult = await getPublicKey()
-      if (keyResult.error) {
-        const message = keyResult.error.message || 'Unable to retrieve public key'
-        // A locked wallet typically surfaces here when access is denied.
-        if (/lock/i.test(message)) {
-          setStatus('locked')
-        } else if (/allow|permission|denied/i.test(message)) {
-          setStatus('not-allowed')
-        } else {
-          setStatus('error')
+      const connected = await window.freighter?.isConnected()
+      if (connected) {
+        const key = await window.freighter?.getPublicKey()
+        setPublicKey(key ?? null)
+        setIsConnected(true)
+        try {
+          const details = await window.freighter.getNetworkDetails()
+          setNetworkPassphrase(details?.networkPassphrase ?? null)
+        } catch {
+          setNetworkPassphrase(null)
         }
-        setError(message)
+      } else {
         setIsConnected(false)
         setPublicKey(null)
         return
@@ -102,5 +89,7 @@ export function useFreighterConnection() {
     }
   }
 
-  return { isConnected: isConnectedState, publicKey, loading, status, error, refresh: checkConnection }
+  const knownNetwork = getKnownNetworkFromPassphrase(networkPassphrase)
+
+  return { isConnected, publicKey, networkPassphrase, knownNetwork, loading }
 }
