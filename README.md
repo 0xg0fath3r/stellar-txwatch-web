@@ -174,6 +174,7 @@ HORIZON_URLS.testnet    // https://horizon-testnet.stellar.org
 HORIZON_URLS.futurenet  // https://horizon-futurenet.stellar.org
 
 // Soroban JSON-RPC - contract simulation, ledger entries
+SOROBAN_RPC_URLS.mainnet  // https://mainnet.stellar.validationcloud.io/v1/<key>
 SOROBAN_RPC_URLS.testnet  // https://soroban-testnet.stellar.org
 ```
 
@@ -328,6 +329,17 @@ When a rule fires, the core engine POSTs this JSON to the registered webhook URL
 ```
 
 The `Test` button on the Add Contract form sends a mock payload to your endpoint so you can verify delivery before going live.
+
+## Error tracking (Sentry)
+
+Client-side errors — such as localStorage parse failures and Freighter
+exceptions — are reported to [Sentry](https://sentry.io) when
+`NEXT_PUBLIC_SENTRY_DSN` is set. If the variable is unset, error tracking is
+completely disabled and the app behaves as before.
+
+- The `storageLogger` error handler forwards localStorage parse errors to Sentry
+- Public keys and webhook URLs are scrubbed from events before they are sent (PII scrubbing)
+- Source maps are uploaded in CI only when the `SENTRY_AUTH_TOKEN` secret is present
 
 ## CI
 

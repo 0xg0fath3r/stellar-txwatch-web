@@ -1,8 +1,9 @@
+import { StrKey } from '@stellar/stellar-sdk'
 import { Network } from '@/types'
 import { StrKey } from '@stellar/stellar-sdk'
 import { SorobanRpc, Horizon, contract } from '@stellar/stellar-sdk'
 
-export const HORIZON_URLS: Record<Network, string> = {
+const DEFAULT_HORIZON_URLS: Record<Network, string> = {
   mainnet: 'https://horizon.stellar.org',
   testnet: 'https://horizon-testnet.stellar.org',
   futurenet: 'https://horizon-futurenet.stellar.org',
@@ -135,11 +136,24 @@ export function isValidAccountId(id: string): boolean {
   }
 }
 
-export function isValidUrl(url: string): boolean {
-  try {
-    const u = new URL(url)
-    return u.protocol === 'http:' || u.protocol === 'https:'
-  } catch {
-    return false
+export type ContractIdValidationResult =
+  | { valid: true }
+  | { valid: false; reason: 'format' | 'checksum'; message: string }
+
+/**
+ * Validate a Stellar contract ID (StrKey `C...`).
+ *
+ * Distinguishes between a malformed ID (wrong prefix, length or alphabet) and
+ * a well-formed ID whose CRC16 checksum does not verify (e.g. a one-character
+ * typo).
+ */
+export function validateContractId(id: string): ContractIdValidationResult {
+  if (typeof id !== 'string' || !CONTRACT_ID_FORMAT.test(id)) {
+    return {
+      valid: false,
+      reason: 'format',
+      message:
+        'Invalid contract ID format: expected a 56-character string starting with "C" using the base32 alphabet (A-Z, 2-7).',
+    }
   }
 }

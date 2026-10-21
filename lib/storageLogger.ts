@@ -19,6 +19,26 @@ export function clearStorageErrorHandlers(): void {
   errorHandlers.length = 0;
 }
 
+function forwardToSentry(ctx: StorageErrorContext): void {
+  try {
+    const client = Sentry.getClient();
+    if (!client) {
+      return;
+    }
+
+    Sentry.captureException(ctx.error, {
+      tags: { source: 'storageLogger' },
+      extra: {
+        key: ctx.key,
+        timestamp: ctx.timestamp,
+        rawValue: (ctx.rawValue ?? '').slice(0, 200),
+      },
+    });
+  } catch {
+    // Never let Sentry reporting crash the app
+  }
+}
+
 function emitStorageError(ctx: StorageErrorContext): void {
   const isDev = env.NODE_ENV !== 'production';
   const debugEnabled = env.DEBUG_STORAGE;
@@ -31,6 +51,8 @@ function emitStorageError(ctx: StorageErrorContext): void {
       (ctx.rawValue ?? '').slice(0, 200),
     );
   }
+
+  forwardToSentry(ctx);
 
   for (const handler of errorHandlers) {
     try {
