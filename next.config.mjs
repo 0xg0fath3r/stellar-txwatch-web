@@ -1,4 +1,14 @@
-import { withSentryConfig } from '@sentry/nextjs'
+import bundleAnalyzer from '@next/bundle-analyzer'
+import { createJiti } from 'jiti'
+
+// Validate environment variables before building; lib/env.ts throws with a
+// readable list of problems if any value is invalid.
+const jiti = createJiti(import.meta.url)
+const { env } = await jiti.import('./lib/env.ts')
+
+const withBundleAnalyzer = bundleAnalyzer({
+  enabled: env.ANALYZE,
+})
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -21,24 +31,4 @@ const nextConfig = {
   },
 }
 
-const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN
-
-const sentryConfig = {
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
-  authToken: sentryAuthToken,
-  silent: true,
-  // Upload source maps only when an auth token is present (e.g. in CI).
-  sourcemaps: {
-    disable: !sentryAuthToken,
-  },
-  // Disable source map upload when no auth token is available.
-  disableServerWebpackPlugin: !sentryAuthToken,
-  disableClientWebpackPlugin: !sentryAuthToken,
-}
-
-const config = process.env.NEXT_PUBLIC_SENTRY_DSN
-  ? withSentryConfig(nextConfig, sentryConfig)
-  : nextConfig
-
-export default config
+export default withBundleAnalyzer(nextConfig)

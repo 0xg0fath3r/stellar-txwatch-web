@@ -1,5 +1,7 @@
 import { StrKey } from '@stellar/stellar-sdk'
 import { Network } from '@/types'
+import { StrKey } from '@stellar/stellar-sdk'
+import { SorobanRpc, Horizon, contract } from '@stellar/stellar-sdk'
 
 const DEFAULT_HORIZON_URLS: Record<Network, string> = {
   mainnet: 'https://horizon.stellar.org',
@@ -7,117 +9,110 @@ const DEFAULT_HORIZON_URLS: Record<Network, string> = {
   futurenet: 'https://horizon-futurenet.stellar.org',
 }
 
-const DEFAULT_SOROBAN_RPC_URLS: Record<Network, string> = {
-  mainnet: 'https://mainnet.stellar.validationcloud.io/v1/soroban/rpc',
-  testnet: 'https://soroban-testnet.stellar.org',
-  futurenet: 'https://rpc-futurenet.stellar.org',
+const mainnetRpcUrl =
+  process.env.NEXT_PUBLIC_SOROBAN_RPC_URL_MAINNET ||
+  process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ||
+  'https://mainnet.sorobanrpc.com'
+
+if (
+  typeof window !== 'undefined' &&
+  !process.env.NEXT_PUBLIC_SOROBAN_RPC_URL_MAINNET &&
+  !process.env.NEXT_PUBLIC_SOROBAN_RPC_URL
+) {
+  console.warn(
+    '[stellar-txwatch-web] Warning: NEXT_PUBLIC_SOROBAN_RPC_URL_MAINNET is unset. Falling back to keyless public provider https://mainnet.sorobanrpc.com.',
+  )
 }
 
-export function isValidUrl(url: string): boolean {
-  try {
-    const u = new URL(url)
-    return u.protocol === 'http:' || u.protocol === 'https:'
-  } catch {
-    return false
-  }
+export const SOROBAN_RPC_URLS: Record<Network, string> = {
+  mainnet: mainnetRpcUrl,
+  testnet: process.env.NEXT_PUBLIC_SOROBAN_RPC_URL_TESTNET || 'https://soroban-testnet.stellar.org',
+  futurenet: process.env.NEXT_PUBLIC_SOROBAN_RPC_URL_FUTURENET || 'https://rpc-futurenet.stellar.org',
 }
 
-const NETWORKS: Network[] = ['mainnet', 'testnet', 'futurenet']
-
-function readEnv(name: string): string | undefined {
-  const value = process.env[name]
-  if (typeof value !== 'string') return undefined
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : undefined
+export function getSorobanRpcUrl(network: Network): string {
+  return SOROBAN_RPC_URLS[network]
 }
 
-/**
- * Resolve a per-network URL from environment variables.
- *
- * Resolution order for each network:
- *   1. `<prefix>_<NETWORK>` (e.g. NEXT_PUBLIC_SOROBAN_RPC_URL_MAINNET)
- *   2. Legacy single-variable form `<prefix>` (e.g. NEXT_PUBLIC_SOROBAN_RPC_URL),
- *      applied to testnet only for backwards compatibility.
- *   3. Hard-coded default.
- *
- * Overrides are validated with `isValidUrl`; invalid values are ignored and
- * fall through to the next source. Resolved URLs are logged in development.
- */
-export function resolveUrlOverrides(
-  prefix: string,
-  defaults: Record<Network, string>,
-  env: Record<string, string | undefined> = process.env,
-): Record<Network, string> {
-  const read = (name: string): string | undefined => {
-    const value = env[name]
-    if (typeof value !== 'string') return undefined
-    const trimmed = value.trim()
-    return trimmed.length > 0 ? trimmed : undefined
-  }
-
-  const resolved = {} as Record<Network, string>
-
-  for (const network of NETWORKS) {
-    const perNetworkVar = `${prefix}_${network.toUpperCase()}`
-    const legacyVar = prefix
-
-    let url = defaults[network]
-    let source = 'default'
-
-    const perNetworkValue = read(perNetworkVar)
-    if (perNetworkValue !== undefined) {
-      if (isValidUrl(perNetworkValue)) {
-        url = perNetworkValue
-        source = perNetworkVar
-      } else if (process.env.NODE_ENV !== 'production') {
-        console.warn(
-          `[stellar] Ignoring invalid URL in ${perNetworkVar}: ${perNetworkValue}`,
-        )
-      }
-    } else if (network === 'testnet') {
-      const legacyValue = read(legacyVar)
-      if (legacyValue !== undefined) {
-        if (isValidUrl(legacyValue)) {
-          url = legacyValue
-          source = `${legacyVar} (legacy, applied to testnet)`
-        } else if (process.env.NODE_ENV !== 'production') {
-          console.warn(
-            `[stellar] Ignoring invalid URL in ${legacyVar}: ${legacyValue}`,
-          )
-        }
-      }
-    }
-
-    resolved[network] = url
-
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`[stellar] ${prefix} for ${network} resolved from ${source}: ${url}`)
-    }
-  }
-
-  return resolved
-}
-
-export const HORIZON_URLS: Record<Network, string> = resolveUrlOverrides(
-  'NEXT_PUBLIC_HORIZON_URL',
-  DEFAULT_HORIZON_URLS,
-)
-
-export const SOROBAN_RPC_URLS: Record<Network, string> = resolveUrlOverrides(
-  'NEXT_PUBLIC_SOROBAN_RPC_URL',
-  DEFAULT_SOROBAN_RPC_URLS,
-)
 
 export const STELLAR_EXPERT_BASE = 'https://stellar.expert/explorer'
 
-export function explorerTxUrl(network: Network, txHash: string): string {
-  const net = network === 'mainnet' ? 'public' : network
-  return `${STELLAR_EXPERT_BASE}/${net}/tx/${txHash}`
+export type ExplorerId = 'stellar-expert' | 'stellar-chain' | 'horizon'
+
+export interface ExplorerMeta {
+  id: ExplorerId
+  name: string
+  description: string
 }
 
-export function explorerContractUrl(network: Network, contractId: string): string {
-  const net = network === 'mainnet' ? 'public' : network
-  return `${STELLAR_EXPERT_BASE}/${net}/contract/${contractId}`
+export const EXPLORERS: ExplorerMeta[] = [
+  {
+    id: 'stellar-expert',
+    name: 'Stellar Expert',
+    description: 'Rich explorer with contract and transaction details.',
+  },
+  {
+    id: 'stellar-chain',
+    name: 'StellarChain',
+    description: 'Alternative block explorer for the Stellar network.',
+  },
+  {
+    id: 'horizon',
+    name: 'Horizon (raw JSON)',
+    description: 'View the raw Horizon API response for the transaction.',
+  },
+]
+
+export const DEFAULT_EXPLORER: ExplorerId = 'stellar-expert'
+
+export function isExplorerId(value: unknown): value is ExplorerId {
+  return (
+    value === 'stellar-expert' ||
+    value === 'stellar-chain' ||
+    value === 'horizon'
+  )
+}
+
+function stellarExpertNet(network: Network): string {
+  return network === 'mainnet' ? 'public' : network
+}
+
+function stellarChainNet(network: Network): string {
+  return network === 'mainnet' ? 'public' : network
+}
+
+export function explorerTxUrl(
+  network: Network,
+  txHash: string,
+  explorer: ExplorerId = DEFAULT_EXPLORER,
+): string {
+  switch (explorer) {
+    case 'stellar-chain':
+      return `https://stellarchain.io/${stellarChainNet(network)}/tx/${txHash}`
+    case 'horizon':
+      return `${HORIZON_URLS[network]}/transactions/${txHash}`
+    case 'stellar-expert':
+    default:
+      return `${STELLAR_EXPERT_BASE}/${stellarExpertNet(network)}/tx/${txHash}`
+  }
+}
+
+export function explorerContractUrl(
+  network: Network,
+  contractId: string,
+  explorer: ExplorerId = DEFAULT_EXPLORER,
+): string {
+  switch (explorer) {
+    case 'stellar-chain':
+      return `https://stellarchain.io/${stellarChainNet(network)}/contracts/${contractId}`
+    case 'horizon':
+      // Horizon does not expose contracts directly; fall back to the account
+      // endpoint which returns the raw JSON for the contract's account.
+      return `${HORIZON_URLS[network]}/accounts/${contractId}`
+    case 'stellar-expert':
+    default:
+      return `${STELLAR_EXPERT_BASE}/${stellarExpertNet(network)}/contract/${contractId}`
+  }
 }
 
 export function truncateId(id: string, chars = 8): string {
@@ -125,7 +120,21 @@ export function truncateId(id: string, chars = 8): string {
   return `${id.slice(0, chars)}...${id.slice(-chars)}`
 }
 
-const CONTRACT_ID_FORMAT = /^C[A-Z2-7]{55}$/
+export function isValidContractId(id: string): boolean {
+  try {
+    return StrKey.isValidContract(id)
+  } catch {
+    return false
+  }
+}
+
+export function isValidAccountId(id: string): boolean {
+  try {
+    return StrKey.isValidEd25519PublicKey(id)
+  } catch {
+    return false
+  }
+}
 
 export type ContractIdValidationResult =
   | { valid: true }
@@ -147,19 +156,4 @@ export function validateContractId(id: string): ContractIdValidationResult {
         'Invalid contract ID format: expected a 56-character string starting with "C" using the base32 alphabet (A-Z, 2-7).',
     }
   }
-
-  if (!StrKey.isValidContract(id)) {
-    return {
-      valid: false,
-      reason: 'checksum',
-      message:
-        'Invalid contract ID checksum: the ID looks well-formed but its checksum does not verify. Check for typos.',
-    }
-  }
-
-  return { valid: true }
-}
-
-export function isValidContractId(id: string): boolean {
-  return validateContractId(id).valid
 }

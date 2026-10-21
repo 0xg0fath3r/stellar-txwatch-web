@@ -1,4 +1,4 @@
-import * as Sentry from '@sentry/nextjs';
+import { env } from '@/lib/env';
 
 export type StorageErrorHandler = (context: StorageErrorContext) => void;
 
@@ -40,14 +40,8 @@ function forwardToSentry(ctx: StorageErrorContext): void {
 }
 
 function emitStorageError(ctx: StorageErrorContext): void {
-  const isDev =
-    typeof process !== 'undefined'
-      ? process.env.NODE_ENV !== 'production'
-      : true;
-  const debugEnabled =
-    typeof process !== 'undefined'
-      ? process.env.DEBUG_STORAGE === 'true'
-      : false;
+  const isDev = env.NODE_ENV !== 'production';
+  const debugEnabled = env.DEBUG_STORAGE;
 
   if (isDev || debugEnabled) {
     console.warn(
