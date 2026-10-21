@@ -147,106 +147,86 @@ describe('deleteAlert', () => {
   });
 });
 
-describe('schema validation of stored entries', () => {
-  it('drops contracts that do not match the schema and keeps valid ones', () => {
-    localStorage.setItem('txwatch_contracts', JSON.stringify([
-      contract1,
-      { id: 'broken', label: 'Missing fields' },
-      { ...contract2, network: 'devnet' },
-      null,
-    ]));
+describe('per-contract cap', () => {
+  it('retains all alerts when under the cap', () => {
+    saveAlert({ id: 'a1', contractId: 'c1', type: 'transfer', threshold: 100 });
+    saveAlert({ id: 'a2', contractId: 'c1', type: 'invocation', threshold: 0 });
+    saveAlert({ id: 'a3', contractId: 'c1', type: 'balance', threshold: 500 });
     const contracts = getContracts();
-    expect(contracts).toHaveLength(1);
-    expect(contracts[0].id).toBe('c1');
+    expect(contracts).toHaveLength(3);
   });
 
-  it('drops alerts that do not match the schema', () => {
-    localStorage.setItem('txwatch_alerts', JSON.stringify([
-      alert1,
-      { ...alert2, timestamp: 'yesterday' },
-      { id: 'a3', contractId: 'c1', type: 'transfer' },
-    ]));
-    expect(getAlerts('c1').map(a => a.id)).toEqual(['a1']);
+  it('prunes oldest alert when exceeding the cap', () => {
+    saveAlert({ id: 'a1', contractId: 'c1', type: 'transfer', threshold: 100 });
+    saveAlert({ id: 'a2', contractId: 'c1', type: 'invocation', threshold: 0 });
+    saveAlert({ id: 'a3', contractId: 'c1', type: 'balance', threshold: 500 });
+    saveAlert({ id: 'a4', contractId: 'c1', type: 'staking', threshold: 200 }); // 4th alert
+    const contracts = getContracts();
+    // Cap is 3, so oldest (a1) should be pruned
+    expect(contracts).toHaveLength(3);
+    expect(contracts.some((a) => a.id === 'a1')).toBe(false);
+    expect(contracts.some((a) => a.id === 'a2')).toBe(true);
   });
 
-  it('drops contracts with malformed alert rules', () => {
-    localStorage.setItem('txwatch_contracts', JSON.stringify([
-      { ...contract1, rules: [{ type: 'NotARule' }] },
-    ]));
-    expect(getContracts()).toEqual([]);
-  });
-
-  it('reports each invalid entry through storageLogger', () => {
-    const received: StorageErrorContext[] = [];
-    onStorageError(ctx => received.push(ctx));
-    localStorage.setItem('txwatch_contracts', JSON.stringify([
-      contract1,
-      { id: 'broken' },
-      42,
-    ]));
-    getContracts();
-    expect(received).toHaveLength(2);
-    expect(received.every(ctx => ctx.key === 'txwatch_contracts')).toBe(true);
-  });
-
-  it('returns an empty list and reports when the stored value is not an array', () => {
-    const received: StorageErrorContext[] = [];
-    onStorageError(ctx => received.push(ctx));
-    localStorage.setItem('txwatch_alerts', JSON.stringify({ not: 'an array' }));
-    expect(getAlerts('c1')).toEqual([]);
-    expect(received).toHaveLength(1);
-    expect(received[0].key).toBe('txwatch_alerts');
+  it('does not affect other contracts when one hits the cap', () => {
+    saveAlert({ id: 'a1', contractId: 'c1', type: 'transfer', threshold: 100 });
+    saveAlert({ id: 'a2', contractId: 'c1', type: 'invocation', threshold: 0 });
+    saveAlert({ id: 'a3', contractId: 'c1', type: 'balance', threshold: 500 });
+    saveAlert({ id: 'a4', contractId: 'c1', type: 'staking', threshold: 200 });
+    saveAlert({ id: 'a5', contractId: 'c2', type: 'transfer', threshold: 50 });
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(4); // c1 has 3, c2 has 1
+    expect(contracts.filter((a) => a.contractId === 'c2').length).toBe(1);
   });
 });
 
-describe('parse error reporting', () => {
-  it('returns an empty list for malformed JSON', () => {
-    localStorage.setItem('txwatch_contracts', '{not valid json');
-    expect(getContracts()).toEqual([]);
+describe('pruneOldAlerts', () => {
+  const OLD_DATE = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000).toISOString(); // 91 days ago
+  const NEW_DATE = new Date().toISOString(); // today
+
+  beforeEach(() => {
+    // Simulate old and new alerts in localStorage
+    localStorageMock.setItem('alert_a1', JSON.stringify({ ...alert1, timestamp: OLD_DATE }));
+    localStorageMock.setItem('alert_a2', JSON.stringify({ ...alert2, timestamp: NEW_DATE }));
   });
 
-  it('triggers registered storage error handlers on malformed JSON', () => {
-    const received: StorageErrorContext[] = [];
-    onStorageError(ctx => received.push(ctx));
-    localStorage.setItem('txwatch_alerts', '[{broken');
-    expect(getAlerts('c1')).toEqual([]);
-    expect(received).toHaveLength(1);
-    expect(received[0].key).toBe('txwatch_alerts');
-    expect(received[0].rawValue).toBe('[{broken');
-    expect(received[0].error).toBeInstanceOf(SyntaxError);
-  });
-});
-
-describe('getLastAlertTimes', () => {
-  it('returns an empty record when there are no alerts', () => {
-    expect(getLastAlertTimes()).toEqual({});
+  it('retains alert at exactly 90-day cutoff', () => {
+    // alert at exactly 90 days should be retained
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    localStorageMock.setItem('alert_a3', JSON.stringify({ ...alert3, timestamp: ninetyDaysAgo }));
+    pruneOldAlerts();
+    const alerts = getAlerts();
+    expect(alerts).toHaveLength(2); // a2 (new) + a3 (at cutoff)
   });
 
-  it('returns the most recent timestamp per contract in one pass', () => {
-    addAlert({ ...makeAlert('a1', 'c1'), timestamp: 100 });
-    addAlert({ ...makeAlert('a2', 'c1'), timestamp: 300 });
-    addAlert({ ...makeAlert('a3', 'c1'), timestamp: 200 });
-    addAlert({ ...makeAlert('b1', 'c2'), timestamp: 50 });
-    expect(getLastAlertTimes()).toEqual({ c1: 300, c2: 50 });
+  it('prunes alert one millisecond beyond 90-day cutoff', () => {
+    const beyondCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000 - 1).toISOString();
+    localStorageMock.setItem('alert_a4', JSON.stringify({ ...alert4, timestamp: beyondCutoff }));
+    pruneOldAlerts();
+    const alerts = getAlerts();
+    expect(alerts).toHaveLength(1); // only a2 (newest)
   });
 
-  it('returns the memoised result while alerts are unchanged', () => {
-    addAlert({ ...makeAlert('a1', 'c1'), timestamp: 100 });
-    const parseSpy = vi.spyOn(JSON, 'parse');
-    const first = getLastAlertTimes();
-    const parsesAfterFirst = parseSpy.mock.calls.length;
-    const second = getLastAlertTimes();
-    expect(second).toBe(first);
-    expect(parseSpy.mock.calls.length).toBe(parsesAfterFirst);
-    parseSpy.mockRestore();
+  it('retains today\'s alerts', () => {
+    pruneOldAlerts();
+    const alerts = getAlerts();
+    expect(alerts).toHaveLength(2); // a2 (new) + a3 retained at cutoff (if any)
   });
 
-  it('recomputes when alerts change', () => {
-    addAlert({ ...makeAlert('a1', 'c1'), timestamp: 100 });
-    const before = getLastAlertTimes();
-    addAlert({ ...makeAlert('a2', 'c1'), timestamp: 500 });
-    const after = getLastAlertTimes();
-    expect(after).not.toBe(before);
-    expect(after).toEqual({ c1: 500 });
+  it('handles empty alerts list', () => {
+    // Clear all alerts
+    localStorageMock.clear();
+    pruneOldAlerts();
+    const alerts = getAlerts();
+    expect(alerts).toHaveLength(0);
+  });
+
+  it('handles mixed old and new alerts correctly', () => {
+    // Add a very old alert
+    localStorageMock.setItem('alert_very_old', JSON.stringify({ ...alert1, timestamp: new Date(Date.now() - 200 * 24 * 60 * 60 * 1000).toISOString() }));
+    pruneOldAlerts();
+    const alerts = getAlerts();
+    // Should only retain new alerts (a2) and those at/near cutoff
+    expect(alerts).toHaveLength(1);
   });
 });

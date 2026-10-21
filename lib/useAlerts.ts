@@ -19,7 +19,10 @@ export function useAlerts(contractId: string | undefined) {
     })
   }, [adapter, refresh])
 
-  const add = useCallback((alert: AlertPayload) => adapter.addAlert(alert), [adapter])
+  function add(alert: AlertPayload): void {
+    addAlert(alert)
+    refresh()
+  }
 
   return { alerts, add, refresh }
 }

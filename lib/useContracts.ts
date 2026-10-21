@@ -21,24 +21,18 @@ export function useContracts() {
     })
   }, [adapter, refresh])
 
-  const add = useCallback((contract: WatchedContract) => adapter.saveContract(contract), [adapter])
-  const update = add
-  const remove = useCallback((id: string) => adapter.deleteContract(id), [adapter])
+  function add(contract: WatchedContract): void {
+    saveContract(contract)
+    refresh()
+  }
 
-  return { contracts, loading, add, remove, update, refresh }
-}
+  function remove(id: string): void {
+    deleteContract(id)
+    refresh()
+  }
 
-export function useContract(id: string) {
-  const adapter = useStorageAdapter()
-  const [contract, setContract] = useState<WatchedContract | undefined>(undefined)
-  const [loading, setLoading] = useState(true)
-
-  const refresh = useCallback(async () => {
-    setContract(await adapter.getContract(id))
-    setLoading(false)
-  }, [adapter, id])
-
-  useEffect(() => {
+  function update(contract: WatchedContract): void {
+    saveContract(contract)
     refresh()
     return adapter.subscribe((change) => {
       if (change === 'contracts') refresh()
