@@ -3,13 +3,57 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { WatchedContract } from '@/types'
 import { getContracts, saveContract, deleteContract, onContractsChange } from '@/lib/storage'
+import { checkContractExists } from '@/lib/stellar'
+
+const BATCH_SIZE = 10
+const BATCH_DELAY_MS = 300
+
+function isTestnetNetwork(network: string | undefined): boolean {
+  if (!network) return false
+  const normalized = network.toLowerCase()
+  return normalized === 'testnet' || normalized === 'futurenet'
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+export type ExistenceResult = boolean | 'unknown'
+
+export async function checkContractsExistence(
+  contracts: WatchedContract[]
+): Promise<Map<string, ExistenceResult>> {
+  const results = new Map<string, ExistenceResult>()
+
+  const targets = contracts.filter((c) => isTestnetNetwork(c.network))
+
+  for (let i = 0; i < targets.length; i += BATCH_SIZE) {
+    const batch = targets.slice(i, i + BATCH_SIZE)
+
+    await Promise.all(
+      batch.map(async (contract) => {
+        try {
+          const exists = await checkContractExists(contract.contract_id, contract.network)
+          results.set(contract.contract_id, exists)
+        } catch {
+          results.set(contract.contract_id, 'unknown')
+        }
+      })
+    )
+
+    if (i + BATCH_SIZE < targets.length) {
+      await delay(BATCH_DELAY_MS)
+    }
+  }
+
+  return results
+}
 
 const UNDO_WINDOW_MS = 8000
 
 export function useContracts() {
   const [contracts, setContracts] = useState<WatchedContract[]>([])
-  const [pendingDeletions, setPendingDeletions] = useState<Record<string, WatchedContract>>({})
-  const timersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const [missingIds, setMissingIds] = useState<string[]>([])
 
   const refresh = useCallback(() => {
     setContracts(getContracts())
@@ -21,105 +65,26 @@ export function useContracts() {
     return unsubscribe
   }, [refresh])
 
-  useEffect(() => {
-    const timers = timersRef.current
-    return () => {
-      Object.values(timers).forEach(clearTimeout)
-    }
-  }, [])
-
-  function add(contract: WatchedContract) {
+  function add(contract: WatchedContract): void {
     saveContract(contract)
     refresh()
   }
 
-  function remove(id: string | string[]) {
-    const ids = Array.isArray(id) ? id : [id]
-    const captured: Record<string, WatchedContract> = {}
-
-    for (const contractId of ids) {
-      const existing = getContracts().find((c) => c.id === contractId)
-      if (!existing) continue
-      captured[contractId] = existing
-      deleteContract(contractId)
-    }
-
-    if (Object.keys(captured).length === 0) return
-
-    setPendingDeletions((prev) => ({ ...prev, ...captured }))
-    refresh()
-
-    for (const contractId of Object.keys(captured)) {
-      if (timersRef.current[contractId]) {
-        clearTimeout(timersRef.current[contractId])
-      }
-      timersRef.current[contractId] = setTimeout(() => {
-        delete timersRef.current[contractId]
-        setPendingDeletions((prev) => {
-          if (!(contractId in prev)) return prev
-          const next = { ...prev }
-          delete next[contractId]
-          return next
-        })
-      }, UNDO_WINDOW_MS)
-    }
-  }
-
-  function undoRemove(id: string | string[]) {
-    const ids = Array.isArray(id) ? id : [id]
-    const restored: Record<string, WatchedContract> = {}
-
-    for (const contractId of ids) {
-      const contract = pendingDeletions[contractId]
-      if (!contract) continue
-      restored[contractId] = contract
-      if (timersRef.current[contractId]) {
-        clearTimeout(timersRef.current[contractId])
-        delete timersRef.current[contractId]
-      }
-      saveContract(contract)
-    }
-
-    if (Object.keys(restored).length === 0) return
-
-    setPendingDeletions((prev) => {
-      const next = { ...prev }
-      for (const contractId of Object.keys(restored)) {
-        delete next[contractId]
-      }
-      return next
-    })
+  function remove(id: string): void {
+    deleteContract(id)
     refresh()
   }
 
-  function setEnabled(id: string, enabled: boolean) {
-    const existing = getContracts().find((c) => c.id === id)
-    if (!existing) return
-    saveContract({ ...existing, enabled })
-    refresh()
-  }
-
-  function toggleEnabled(id: string) {
-    const existing = getContracts().find((c) => c.id === id)
-    if (!existing) return
-    saveContract({ ...existing, enabled: !existing.enabled })
-    refresh()
-  }
-
-  function update(contract: WatchedContract) {
+  function update(contract: WatchedContract): void {
     saveContract(contract)
     refresh()
   }
 
-  return {
-    contracts,
-    add,
-    remove,
-    undoRemove,
-    pendingDeletions,
-    setEnabled,
-    toggleEnabled,
-    update,
-    refresh,
+  function removeMissing() {
+    missingIds.forEach((id) => deleteContract(id))
+    setMissingIds([])
+    refresh()
   }
+
+  return { contracts, missingIds, add, remove, update, removeMissing, refresh }
 }

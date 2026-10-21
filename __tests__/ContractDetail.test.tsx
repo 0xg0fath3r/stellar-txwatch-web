@@ -1,5 +1,7 @@
+import { render, screen } from '@testing-library/react'
 import { formatRuleSummary } from '@/lib/format'
 import { AlertRule } from '@/types'
+import ContractDetail from '@/app/contracts/[id]/page'
 
 // Pure helpers mirroring the contract detail page behaviors (#414, #416).
 // These are kept local to the test so the page component can stay a thin shell.
@@ -86,71 +88,117 @@ describe('formatRuleSummary', () => {
     const rule: AlertRule = { type: 'AdminFunctionCalled', function_names: [] }
     expect(formatRuleSummary(rule)).toBe('admin functions')
   })
+
+  it('formats token-denominated LargeTransfer rule with asset and threshold', () => {
+    const rule: AlertRule = {
+      type: 'LargeTransfer',
+      asset: 'CUSDC',
+      threshold: 500,
+    }
+    expect(formatRuleSummary(rule)).toBe('>= 500 CUSDC')
+  })
 })
 
-describe('duplicate contract prefill (#414)', () => {
-  const contract: ContractLike = {
-    id: 'CABC123',
-    network: 'testnet',
-    label: 'Treasury',
-    webhook_url: 'https://example.com/hook',
-    rules: [
-      { type: 'LargeTransfer', threshold_xlm: 500 },
-      { type: 'FunctionCalled', function_name: 'transfer' },
-    ],
+const DAYS = 24 * 60 * 60 * 1000
+const LEDGERS_PER_DAY = 17280
+
+function mockContract(liveUntilLedgerSeq: number) {
+  return {
+    id: 'CABC',
+    liveUntilLedgerSeq,
+    latestLedger: 1000,
   }
+}
 
-  it('appends " (copy)" to the label', () => {
-    expect(buildDuplicatePrefill(contract).label).toBe('Treasury (copy)')
+describe('ContractDetail TTL display', () => {
+  beforeEach(() => {
+    jest.useFakeTimers()
+    jest.setSystemTime(new Date('2024-01-01T00:00:00Z'))
   })
 
-  it('copies rules without sharing references', () => {
-    const prefill = buildDuplicatePrefill(contract)
-    expect(prefill.rules).toEqual(contract.rules)
-    expect(prefill.rules[0]).not.toBe(contract.rules[0])
+  afterEach(() => {
+    jest.useRealTimers()
+    jest.restoreAllMocks()
   })
 
-  it('copies the webhook URL', () => {
-    expect(buildDuplicatePrefill(contract).webhook_url).toBe('https://example.com/hook')
+  it('shows liveUntilLedgerSeq and estimated expiry', () => {
+    const liveUntilLedgerSeq = 1000 + LEDGERS_PER_DAY * 60
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => mockContract(liveUntilLedgerSeq),
+    } as Response)
+
+    render(<ContractDetail params={{ id: 'CABC' }} />)
+
+    expect(screen.getByText(String(liveUntilLedgerSeq))).toBeInTheDocument()
+    expect(screen.getByText(/estimated/i)).toBeInTheDocument()
   })
 
-  it('leaves the contract ID editable (empty) and keeps network selectable', () => {
-    const prefill = buildDuplicatePrefill(contract)
-    expect(prefill.id).toBe('')
-    expect(prefill.network).toBe('testnet')
+  it('shows amber warning under 30 days', async () => {
+    const liveUntilLedgerSeq = 1000 + LEDGERS_PER_DAY * 20
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => mockContract(liveUntilLedgerSeq),
+    } as Response)
+
+    render(<ContractDetail params={{ id: 'CABC' }} />)
+
+    const warning = await screen.findByText(/expir/i)
+    expect(warning).toHaveClass('amber')
+  })
+
+  it('shows red warning under 7 days', async () => {
+    const liveUntilLedgerSeq = 1000 + LEDGERS_PER_DAY * 3
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => mockContract(liveUntilLedgerSeq),
+    } as Response)
+
+    render(<ContractDetail params={{ id: 'CABC' }} />)
+
+    const warning = await screen.findByText(/expir/i)
+    expect(warning).toHaveClass('red')
+  })
+
+  it('shows no warning when far from expiry', async () => {
+    const liveUntilLedgerSeq = 1000 + LEDGERS_PER_DAY * 365
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => mockContract(liveUntilLedgerSeq),
+    } as Response)
+
+    render(<ContractDetail params={{ id: 'CABC' }} />)
+
+    expect(screen.queryByText(/expir/i)).not.toBeInTheDocument()
   })
 })
 
-describe('undo contract deletion (#416)', () => {
-  const contract: ContractLike = {
-    id: 'CABC123',
-    network: 'mainnet',
-    label: 'Treasury',
-    rules: [{ type: 'AnyTransaction' }],
-  }
-
-  const alerts: AlertLike[] = [
-    { id: 'a1', contract_id: 'CABC123', rule: { type: 'AnyTransaction' } },
-    { id: 'a2', contract_id: 'CABC123', rule: { type: 'TransactionFailed' } },
-    { id: 'a3', contract_id: 'OTHER', rule: { type: 'AnyTransaction' } },
-  ]
-
-  it('shows the undo toast for about 8 seconds', () => {
-    expect(UNDO_TOAST_DURATION_MS).toBe(8000)
+describe('formatRelativeTime (#220)', () => {
+  it('formats recent timestamps as just now', async () => {
+    const { formatRelativeTime } = await import('@/lib/format')
+    const now = 1700000000000
+    expect(formatRelativeTime(now - 10000, now)).toBe('just now')
+    expect(formatRelativeTime(now - 59000, now)).toBe('just now')
   })
 
-  it('captures the contract and only its alerts on delete', () => {
-    const snapshot = deleteContract(contract, alerts)
-    expect(snapshot.contract).toEqual(contract)
-    expect(snapshot.alerts.map((a) => a.id)).toEqual(['a1', 'a2'])
-  })
-
-  it('restores the contract and its alerts exactly on undo', () => {
-    const snapshot = deleteContract(contract, alerts)
-    const restored = undoDelete(snapshot)
-    expect(restored.contract).toEqual(contract)
-    expect(restored.alerts).toEqual(snapshot.alerts)
-    expect(restored.alerts[0]).not.toBe(snapshot.alerts[0])
+  it('formats minutes, hours, and days ago', async () => {
+    const { formatRelativeTime } = await import('@/lib/format')
+    const now = 1700000000000
+    expect(formatRelativeTime(now - 60000 * 5, now)).toBe('5 minutes ago')
+    expect(formatRelativeTime(now - 60000 * 60, now)).toBe('1 hour ago')
+    expect(formatRelativeTime(now - 60000 * 60 * 3, now)).toBe('3 hours ago')
+    expect(formatRelativeTime(now - 86400000 * 3, now)).toBe('3 days ago')
+    expect(formatRelativeTime(now - 86400000 * 35, now)).toBe('1 month ago')
+    expect(formatRelativeTime(now - 86400000 * 400, now)).toBe('1 year ago')
   })
 })
+
+describe('Soroban RPC URL configuration and fallback', () => {
+  it('defaults to keyless public endpoint for mainnet', async () => {
+    const { SOROBAN_RPC_URLS, getSorobanRpcUrl } = await import('@/lib/stellar')
+    expect(SOROBAN_RPC_URLS.mainnet).toBe('https://mainnet.sorobanrpc.com')
+    expect(getSorobanRpcUrl('mainnet')).toBe('https://mainnet.sorobanrpc.com')
+  })
+})
+
 

@@ -4,10 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { WatchedContract, Network } from '@/types'
-import { getContracts, getAlerts, removeContractDeferred, restoreContracts } from '@/lib/storage'
+import { getContracts, getAlerts, removeContract } from '@/lib/storage'
 import ContractCard from '@/components/ContractCard'
 import EmptyState from '@/components/EmptyState'
-import Toast from '@/components/Toast'
+import { checkContractExistence } from '@/lib/hooks/useContracts'
 
 type ViewMode = 'flat' | 'grouped'
 type NetworkFilter = 'all' | Network
@@ -61,14 +61,41 @@ export default function ContractsPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('flat')
   const [page, setPage] = useState(1)
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
-  const [pendingUndo, setPendingUndo] = useState<{ ids: string[]; count: number } | null>(null)
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [missingIds, setMissingIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const all = getContracts()
     setAllContracts(all)
     setMounted(true)
   }, [])
+
+  // Batched existence check for testnet/futurenet contracts (these networks reset periodically)
+  useEffect(() => {
+    if (!mounted) return
+    const candidates = allContracts.filter(
+      (contract) => contract.network === 'testnet' || contract.network === 'futurenet'
+    )
+    if (candidates.length === 0) return
+
+    let cancelled = false
+    checkContractExistence(candidates).then((missing) => {
+      if (cancelled) return
+      setMissingIds(new Set(missing))
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [allContracts, mounted])
+
+  const removeMissing = () => {
+    for (const id of missingIds) {
+      const contract = allContracts.find((c) => c.id === id)
+      if (contract) removeContract(contract.id)
+    }
+    setAllContracts((current) => current.filter((contract) => !missingIds.has(contract.id)))
+    setMissingIds(new Set())
+  }
 
   // Check for a recently-created contract id in sessionStorage and highlight it once
   useEffect(() => {
@@ -176,6 +203,7 @@ export default function ContractsPage() {
 
   const hasAnyContracts = allContracts.length > 0
   const hasFilteredContracts = filtered.length > 0
+  const missingCount = missingIds.size
 
   return (
     <div className="space-y-6">
@@ -299,6 +327,26 @@ export default function ContractsPage() {
         </div>
       </div>
 
+      {missingCount > 0 && (
+        <div className="flex flex-col gap-3 rounded-lg border border-amber-700/50 bg-amber-950/40 px-4 py-3 text-sm text-amber-200 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+            <span>
+              {missingCount} contract{missingCount === 1 ? '' : 's'} not found — network may have been reset
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={removeMissing}
+            className="inline-flex items-center justify-center rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-500"
+          >
+            Remove missing contracts
+          </button>
+        </div>
+      )}
+
       {!hasAnyContracts ? (
         <EmptyState
           title="No contracts yet"
@@ -347,7 +395,7 @@ export default function ContractsPage() {
                       contract={contract}
                       lastAlertTime={getAlerts(contract.contract_id)[0]?.timestamp}
                       highlight={highlightedId === contract.id}
-                      onDelete={() => handleDelete([contract.id])}
+                      missing={missingIds.has(contract.id)}
                     />
                   ))}
                 </div>
@@ -364,7 +412,7 @@ export default function ContractsPage() {
                 contract={contract}
                 lastAlertTime={getAlerts(contract.contract_id)[0]?.timestamp}
                 highlight={highlightedId === contract.id}
-                onDelete={() => handleDelete([contract.id])}
+                missing={missingIds.has(contract.id)}
               />
             ))}
           </div>

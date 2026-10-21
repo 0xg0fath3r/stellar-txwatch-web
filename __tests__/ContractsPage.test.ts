@@ -130,103 +130,69 @@ describe('contracts page — search', () => {
   })
 })
 
-describe('contracts page — undo delete (issue #416)', () => {
-  type Alert = { id: string; threshold: number; channel: string }
-  type Contract = { id: string; label: string; alerts: Alert[] }
+describe('contracts page — missing contract detection (issue #411)', () => {
+  type ContractItem = { contract_id: string; network: string }
 
-  const UNDO_WINDOW_MS = 8000
+  const RESETTABLE_NETWORKS = ['testnet', 'futurenet']
 
-  function makeContracts(): Contract[] {
-    return [
-      {
-        id: 'c1',
-        label: 'Escrow Manager',
-        alerts: [
-          { id: 'a1', threshold: 100, channel: 'email' },
-          { id: 'a2', threshold: 500, channel: 'slack' },
-        ],
-      },
-      {
-        id: 'c2',
-        label: 'Payment Router',
-        alerts: [{ id: 'a3', threshold: 250, channel: 'webhook' }],
-      },
-      {
-        id: 'c3',
-        label: 'Token Service',
-        alerts: [],
-      },
-    ]
+  function isResettableNetwork(network: string): boolean {
+    return RESETTABLE_NETWORKS.includes(network)
   }
 
-  type Toast = { message: string; actionLabel: string; durationMs: number }
-
-  type DeleteResult = {
-    contracts: Contract[]
-    toast: Toast | null
-    restore: () => Contract[]
+  function findMissingContractIds(
+    list: ContractItem[],
+    existence: Record<string, boolean>,
+  ): string[] {
+    return list
+      .filter((c) => isResettableNetwork(c.network) && existence[c.contract_id] === false)
+      .map((c) => c.contract_id)
   }
 
-  function deleteContracts(list: Contract[], ids: string[]): DeleteResult {
-    const removed = list.filter((c) => ids.includes(c.id))
-    const remaining = list.filter((c) => !ids.includes(c.id))
-    return {
-      contracts: remaining,
-      toast:
-        removed.length > 0
-          ? {
-              message: removed.length === 1 ? 'Contract deleted' : `${removed.length} contracts deleted`,
-              actionLabel: 'Undo',
-              durationMs: UNDO_WINDOW_MS,
-            }
-          : null,
-      restore: () => {
-        const restored = [...remaining]
-        for (const contract of removed) {
-          const index = list.findIndex((c) => c.id === contract.id)
-          restored.splice(index, 0, contract)
-        }
-        return restored
-      },
-    }
+  function removeMissingContracts(
+    list: ContractItem[],
+    existence: Record<string, boolean>,
+  ): ContractItem[] {
+    const missing = new Set(findMissingContractIds(list, existence))
+    return list.filter((c) => !missing.has(c.contract_id))
   }
 
-  it('single delete shows an Undo toast for about 8 seconds', () => {
-    const result = deleteContracts(makeContracts(), ['c2'])
-    expect(result.contracts.map((c) => c.id)).toEqual(['c1', 'c3'])
-    expect(result.toast).not.toBeNull()
-    expect(result.toast!.actionLabel).toBe('Undo')
-    expect(result.toast!.durationMs).toBe(8000)
+  const items: ContractItem[] = [
+    { contract_id: 'MAIN1', network: 'mainnet' },
+    { contract_id: 'TEST1', network: 'testnet' },
+    { contract_id: 'TEST2', network: 'testnet' },
+    { contract_id: 'FUT1', network: 'futurenet' },
+  ]
+
+  it('flags testnet/futurenet contracts reported as missing', () => {
+    const existence = { MAIN1: true, TEST1: false, TEST2: true, FUT1: false }
+    expect(findMissingContractIds(items, existence).sort()).toEqual(['FUT1', 'TEST1'])
   })
 
-  it('undo after single delete restores the contract and its alerts exactly', () => {
-    const original = makeContracts()
-    const result = deleteContracts(original, ['c2'])
-    const restored = result.restore()
-    expect(restored).toEqual(original)
-    const c2 = restored.find((c) => c.id === 'c2')!
-    expect(c2.alerts).toEqual([{ id: 'a3', threshold: 250, channel: 'webhook' }])
+  it('does not flag contracts whose existence is unknown or true', () => {
+    const existence = { TEST1: true }
+    expect(findMissingContractIds(items, existence)).toEqual([])
   })
 
-  it('bulk delete shows an Undo toast', () => {
-    const result = deleteContracts(makeContracts(), ['c1', 'c3'])
-    expect(result.contracts.map((c) => c.id)).toEqual(['c2'])
-    expect(result.toast).not.toBeNull()
-    expect(result.toast!.actionLabel).toBe('Undo')
-    expect(result.toast!.durationMs).toBe(8000)
+  it('never flags mainnet contracts even when reported missing', () => {
+    const existence = { MAIN1: false, TEST1: false, TEST2: false, FUT1: false }
+    const missing = findMissingContractIds(items, existence)
+    expect(missing).not.toContain('MAIN1')
+    expect(missing.sort()).toEqual(['FUT1', 'TEST1', 'TEST2'])
   })
 
-  it('undo after bulk delete restores all contracts and alerts exactly', () => {
-    const original = makeContracts()
-    const result = deleteContracts(original, ['c1', 'c3'])
-    const restored = result.restore()
-    expect(restored).toEqual(original)
-    expect(restored.find((c) => c.id === 'c1')!.alerts).toEqual(original[0].alerts)
-    expect(restored.find((c) => c.id === 'c3')!.alerts).toEqual([])
+  it('returns empty array when there are no resettable contracts', () => {
+    const mainnetOnly: ContractItem[] = [{ contract_id: 'MAIN1', network: 'mainnet' }]
+    expect(findMissingContractIds(mainnetOnly, { MAIN1: false })).toEqual([])
   })
 
-  it('no toast is shown when nothing was deleted', () => {
-    const result = deleteContracts(makeContracts(), [])
-    expect(result.toast).toBeNull()
+  it('remove missing contracts filters flagged items out of the list', () => {
+    const existence = { MAIN1: false, TEST1: false, TEST2: true, FUT1: false }
+    const result = removeMissingContracts(items, existence)
+    expect(result.map((c) => c.contract_id).sort()).toEqual(['MAIN1', 'TEST2'])
+  })
+
+  it('remove missing contracts keeps the list intact when nothing is missing', () => {
+    const existence = { MAIN1: true, TEST1: true, TEST2: true, FUT1: true }
+    expect(removeMissingContracts(items, existence)).toEqual(items)
   })
 })
