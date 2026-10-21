@@ -4,24 +4,26 @@ import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { WatchedContract, AlertPayload, AlertRule } from '@/types'
 import { getContract, deleteContract, getAlerts, saveContract } from '@/lib/storage'
-import { truncateId, explorerContractUrl, isValidUrl } from '@/lib/stellar'
-import { formatDate, formatRuleSummary } from '@/lib/format'
 import { useAnalytics } from '@/lib/useAnalytics'
-import NetworkBadge from '@/components/NetworkBadge'
-import AlertRuleBadge from '@/components/AlertRuleBadge'
 import WebhookLog from '@/components/WebhookLog'
-import RuleBuilder from '@/components/RuleBuilder'
-import CopyButton from '@/components/CopyButton'
-import MetadataSection from '@/components/MetadataSection'
+import ContractHeader from '@/components/ContractHeader'
+import ContractMetadataCards from '@/components/ContractMetadataCards'
+import ActiveRulesList from '@/components/ActiveRulesList'
+import EditDetailsModal from '@/components/EditDetailsModal'
+import EditRulesModal from '@/components/EditRulesModal'
+import DeleteContractModal from '@/components/DeleteContractModal'
+import ContractDetailLoading from './loading'
 
 export default function ContractDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const { trackEvent } = useAnalytics()
+
   const [contract, setContract] = useState<WatchedContract | null>(null)
   const [alerts, setAlerts] = useState<AlertPayload[]>([])
-  const [mounted, setMounted] = useState(false)
   const [contractNotFound, setContractNotFound] = useState(false)
+
   const [showDelete, setShowDelete] = useState(false)
+  const [showEditDetails, setShowEditDetails] = useState(false)
   const [showEditRules, setShowEditRules] = useState(false)
   const [editedRules, setEditedRules] = useState<AlertRule[]>([])
   const [rulesError, setRulesError] = useState<string | null>(null)
@@ -38,15 +40,10 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
 
   useEffect(() => {
     const c = getContract(params.id)
-    if (!c) { 
-      setContractNotFound(true)
-      setMounted(true)
-      return 
-    }
+    if (!c) { setContractNotFound(true); return }
     setContract(c)
     setAlerts(getAlerts(params.id))
-    setMounted(true)
-  }, [params.id, router])
+  }, [params.id])
 
   const filteredAlerts = useMemo(() => {
     if (!searchHash) return alerts
@@ -59,16 +56,7 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
     router.push('/contracts')
   }
 
-  function openEditRules() {
-    setEditedRules(contract!.rules)
-    setRulesError(null)
-    setShowEditRules(true)
-    trackEvent('rule_edit_opened', { contractId: params.id, ruleCount: contract!.rules.length })
-  }
-
-  function saveRules() {
-    if (editedRules.length === 0) { setRulesError('Add at least one rule'); return }
-    const updated = { ...contract!, rules: editedRules }
+  function handleSaveDetails(updated: WatchedContract) {
     saveContract(updated)
     setContract(updated)
     setShowEditRules(false)
@@ -155,8 +143,6 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
     }
   }
 
-  if (!mounted) return null
-
   if (contractNotFound) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -184,7 +170,7 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
     )
   }
 
-  if (!contract) return null
+  if (!contract) return <ContractDetailLoading />
 
   return (
     <div className="space-y-8 max-w-4xl">
@@ -453,64 +439,27 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
         </div>
       )}
 
-      {/* Edit Rules Modal */}
       {showEditRules && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-zinc-100">Edit Alert Rules</h3>
-            <RuleBuilder
-              rules={editedRules}
-              onChange={setEditedRules}
-              onRulesChanged={(rules, action) =>
-                trackEvent(action === 'remove' ? 'rule_removed' : 'rule_added', {
-                  contractId: params.id,
-                  ruleCount: rules.length,
-                })
-              }
-            />
-            {rulesError && <p className="text-xs text-red-400">{rulesError}</p>}
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={saveRules}
-                className="flex-1 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
-              >
-                Save Rules
-              </button>
-              <button
-                onClick={handleCancelEdit}
-                className="flex-1 px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+        <EditRulesModal
+          initialRules={contract.rules}
+          onSave={handleSaveRules}
+          onClose={() => setShowEditRules(false)}
+          onRuleEvent={(rules, action) =>
+            trackEvent(action === 'remove' ? 'rule_removed' : 'rule_added', {
+              contractId: params.id,
+              ruleCount: rules.length,
+            })
+          }
+        />
       )}
 
-      {/* Unsaved Changes Warning Modal */}
-      {showUnsavedWarning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 max-w-sm w-full space-y-4">
-            <h3 className="text-lg font-semibold text-zinc-100">Discard Changes?</h3>
-            <p className="text-sm text-zinc-400">
-              You have unsaved changes to your alert rules. Are you sure you want to discard them?
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={confirmDiscard}
-                className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-sm font-medium text-white transition-colors"
-              >
-                Discard
-              </button>
-              <button
-                onClick={() => setShowUnsavedWarning(false)}
-                className="flex-1 px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
-              >
-                Keep Editing
-              </button>
-            </div>
-          </div>
-        </div>
+      {showDelete && (
+        <DeleteContractModal
+          contractLabel={contract.label}
+          alertCount={alerts.length}
+          onConfirm={handleDelete}
+          onClose={() => setShowDelete(false)}
+        />
       )}
     </div>
   )
