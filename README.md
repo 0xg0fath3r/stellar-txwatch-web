@@ -46,31 +46,68 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Project structure
 
 ```
+.github/
+  workflows/ci.yml            # Lint, type-check and build on every push/PR to main
+  ISSUE_TEMPLATE/             # Bug report, feature request and docs issue forms
+  pull_request_template.md    # PR summary, linked issue and test checklist
+  CODEOWNERS                  # Area-based review routing
 app/
-  page.tsx                  # Landing page
-  dashboard/page.tsx        # Stats + contract grid
+  layout.tsx                  # Root layout: nav, wallet status, global styles
+  page.tsx                    # Landing page
+  not-found.tsx               # 404 page
+  globals.css                 # Tailwind base styles
+  dashboard/
+    page.tsx                  # Stats + contract grid
+    loading.tsx               # Dashboard loading skeleton
   contracts/
-    page.tsx                # Contract list
-    new/page.tsx            # Add contract form
-    [id]/page.tsx           # Contract detail + alert history
+    page.tsx                  # Contract list with search and pagination
+    loading.tsx               # Contract list loading skeleton
+    new/page.tsx              # Add contract form + webhook test
+    [id]/page.tsx             # Contract detail + alert history
 components/
-  ContractCard.tsx          # Contract summary card
-  RuleBuilder.tsx           # Alert rule configuration UI
-  WebhookLog.tsx            # Webhook delivery history table
-  NetworkBadge.tsx          # Mainnet/Testnet/Futurenet badge
-  AlertRuleBadge.tsx        # Rule type display badge
-  FreighterConnect.tsx      # Wallet connection button
-  CopyButton.tsx            # Clipboard copy utility
-  MobileNav.tsx             # Mobile navigation drawer
-  EmptyState.tsx            # Empty list placeholder
+  AlertRuleBadge.tsx          # Rule type display badge
+  ContractCard.tsx            # Contract summary card
+  CopyButton.tsx              # Clipboard copy button
+  EmptyState.tsx              # Empty list placeholder
+  FreighterConnect.tsx        # Wallet connection button
+  MetadataSection.tsx         # Labelled metadata tile on the detail page
+  MobileNav.tsx               # Mobile navigation drawer
+  NetworkBadge.tsx            # Mainnet/Testnet/Futurenet badge
+  NetworkEditField.tsx        # Inline network selector with save/cancel
+  RuleBuilder.tsx             # Alert rule configuration UI
+  SortToggle.tsx              # Asc/desc sort direction toggle
+  Toast.tsx                   # Auto-dismissing success/error notification
+  WalletStatusBadge.tsx       # Freighter connected/disconnected indicator
+  WebhookLog.tsx              # Webhook delivery history table
+  WebhookLogCard.tsx          # Single webhook delivery entry card
+docs/
+  FREIGHTER_INTEGRATION.md    # Freighter wallet integration guide
+  MOCK_API_STRATEGY.md        # Mock vs. real API mode strategy
+  images/                     # README screenshots and demo GIF
+hooks/
+  useSortedLog.ts             # Sort log entries by timestamp with a toggle
 lib/
-  stellar.ts                # Horizon + Soroban RPC helpers
-  storage.ts                # localStorage contract registry
-  api.ts                    # Fetch wrapper + test webhook
-  useContracts.ts           # React hook for contract state
+  api.ts                      # Fetch wrapper + test webhook
+  contractSort.ts             # Deterministic contract ordering (network, label, id)
+  exportStorage.ts            # Export/import contracts as a JSON snapshot
+  format.ts                   # Date and rule summary formatters
+  formatAmount.ts             # Asset amount formatting (XLM, USDC, stroops)
+  stellar.ts                  # Horizon/Soroban URLs, validation, explorer links
+  storage.ts                  # localStorage contract and alert registry
+  storageLogger.ts            # Safe JSON parsing with storage error hooks
+  useAlerts.ts                # React hook for a contract's alert history
+  useAnalytics.ts             # No-op analytics hook (trackEvent stub)
+  useContracts.ts             # React hook for contract state
+  useFreighter.ts             # Freighter connection state + actions
+  useFreighterConnection.ts   # Freighter connection check with loading state
+  useWallet.ts                # Minimal connected wallet public key hook
+  __tests__/                  # Unit tests for lib modules
 types/
-  index.ts                  # Shared types (mirrors core Rust structs)
+  index.ts                    # Shared types (mirrors core Rust structs)
+__tests__/                    # Component, page and integration tests (Vitest)
 ```
+
+> Keep this tree in sync when adding, moving or removing files — the PR checklist asks you to confirm it.
 
 ## Architecture overview
 
@@ -336,24 +373,31 @@ The dashboard currently operates in two modes:
 
 ## Screenshots
 
-### Landing Page
-The landing page introduces the dashboard and provides quick access to wallet connection and contract registration.
+> All captures use the default dark theme. See [`docs/images/README.md`](./docs/images/README.md) for how to capture and optimise new images.
+
+### Demo
+
+Registering a contract and sending a test webhook:
+
+![Demo: registering a contract and testing a webhook](./docs/images/demo.gif)
 
 ### Dashboard
-The dashboard displays registered contracts in a grid layout with summary cards showing contract ID, network, and alert rule count.
+
+Registered contracts in a grid with summary cards showing contract ID, network and alert rule count.
+
+![Dashboard](./docs/images/dashboard.png)
+
+### Add Contract
+
+Enter a contract ID (validated against the Soroban address format), pick a network, configure alert rules and test webhook delivery before going live.
+
+![Add contract form](./docs/images/add-contract.png)
 
 ### Contract Detail
-The contract detail page shows:
-- Contract metadata (ID, network, registration date)
-- Configured alert rules with type badges
-- Webhook delivery history with transaction links to Stellar Expert
 
-### Add Contract Form
-The form allows users to:
-- Enter a contract ID (validated against Soroban address format)
-- Select the network (Mainnet, Testnet, Futurenet)
-- Configure alert rules (large transfers, function calls, admin actions, failed transactions)
-- Test webhook delivery before going live
+Contract metadata, configured alert rules with type badges, and webhook delivery history with transaction links to Stellar Expert.
+
+![Contract detail](./docs/images/contract-detail.png)
 
 ## Bug Reports & Feature Requests
 
