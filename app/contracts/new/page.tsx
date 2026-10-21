@@ -120,6 +120,7 @@ export default function NewContractPage() {
       rules,
       webhook_url: webhookUrl.trim(),
       created_at: Date.now(),
+      updated_at: Date.now(),
     }
     saveContract(contract)
     try {
