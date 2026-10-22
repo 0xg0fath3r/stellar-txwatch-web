@@ -28,7 +28,9 @@ export interface AnalyticsEventProperties {
 // Stub: replace this function body to integrate a real analytics provider.
 /* eslint-disable @typescript-eslint/no-unused-vars */
 function trackEventStub(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _event: AnalyticsEventName,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _properties?: AnalyticsEventProperties,
 ): void {
   // no-op — intentionally empty until a provider is configured

@@ -274,27 +274,28 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
   }
 
   function saveMetadata() {
-    // Validation
     const trimmedLabel = editedLabel.trim()
     const trimmedWebhookUrl = editedWebhookUrl.trim()
+    const trimmedFallbackUrl = editedFallbackWebhookUrl.trim()
 
     if (!trimmedLabel) {
       setMetadataError('Label is required')
       return
     }
-
     if (trimmedLabel.length > 100) {
       setMetadataError('Label must be 100 characters or less')
       return
     }
-
     if (!trimmedWebhookUrl) {
       setMetadataError('Webhook URL is required')
       return
     }
-
     if (!isValidUrl(trimmedWebhookUrl)) {
       setMetadataError('Please enter a valid HTTP or HTTPS URL')
+      return
+    }
+    if (trimmedFallbackUrl && !isValidUrl(trimmedFallbackUrl)) {
+      setMetadataError('Fallback webhook must be a valid HTTP or HTTPS URL')
       return
     }
 

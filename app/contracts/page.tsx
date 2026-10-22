@@ -63,6 +63,13 @@ export default function ContractsPage() {
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const [missingIds, setMissingIds] = useState<Set<string>>(new Set())
 
+  // Export / Import state
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importSuccess, setImportSuccess] = useState<string | null>(null)
+  const [showImportConfirm, setShowImportConfirm] = useState(false)
+  const [pendingSnapshot, setPendingSnapshot] = useState<ReturnType<typeof parseContractSnapshot> | null>(null)
+
   useEffect(() => {
     document.title = 'Contracts · TxWatch'
     const all = getContracts()
@@ -325,6 +332,40 @@ export default function ContractsPage() {
             <span className="hidden sm:inline">Add Contract</span>
             <span className="sm:hidden">Add</span>
           </Link>
+
+          {/* Export / Import */}
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="sr-only"
+            aria-hidden="true"
+            onChange={handleImportFileChange}
+          />
+          {hasAnyContracts && (
+            <button
+              type="button"
+              onClick={handleExport}
+              title="Export all contracts as JSON backup"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              <span className="hidden sm:inline">Export</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => { setImportError(null); setImportSuccess(null); importInputRef.current?.click() }}
+            title="Import contracts from a JSON backup"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12" />
+            </svg>
+            <span className="hidden sm:inline">Import</span>
+          </button>
         </div>
       </div>
 

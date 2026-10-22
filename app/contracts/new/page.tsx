@@ -18,6 +18,7 @@ interface FormErrors {
   label?: string
   contract_id?: string
   webhook_url?: string
+  fallback_webhook_url?: string
   rules?: string
   wallet?: string
   network?: string
@@ -179,6 +180,7 @@ export default function NewContractPage() {
     const trimmedLabel = label.trim()
     const trimmedContractId = contractId.trim()
     const trimmedWebhookUrl = webhookUrl.trim()
+    const trimmedFallbackUrl = fallbackWebhookUrl.trim()
 
     if (!trimmedLabel) e.label = 'Label is required'
     if (!trimmedContractId) e.contract_id = 'Contract ID is required'
@@ -192,6 +194,9 @@ export default function NewContractPage() {
     }
     if (!trimmedWebhookUrl) e.webhook_url = 'Webhook URL is required'
     else if (!isValidUrl(trimmedWebhookUrl)) e.webhook_url = 'Must be a valid http/https URL'
+    if (trimmedFallbackUrl && !isValidUrl(trimmedFallbackUrl)) {
+      e.fallback_webhook_url = 'Must be a valid http/https URL'
+    }
     if (rules.length === 0) e.rules = 'Add at least one alert rule'
     return e
   }
@@ -461,7 +466,12 @@ export default function NewContractPage() {
         {/* Alert Rules */}
         <div>
           <label className="block text-sm font-medium text-zinc-300 mb-1.5">Alert Rules</label>
-          <RuleBuilder rules={rules} onChange={setRules} />
+          <RuleBuilder
+            rules={rules}
+            onChange={setRules}
+            contractId={contractId.trim() || undefined}
+            network={network}
+          />
           {errors.rules && <p className="mt-1 text-xs text-red-400">{errors.rules}</p>}
         </div>
 

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { AlertRule, AlertRuleType } from '@/types'
 import { formatRuleSummary } from '@/lib/format'
+import { HORIZON_URLS } from '@/lib/stellar'
 import AlertRuleBadge from './AlertRuleBadge'
 
 const RULE_TYPES: AlertRuleType[] = [
@@ -110,10 +111,18 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
       ? `Function not found in contract spec — rule may never fire: ${unknownNames.join(', ')}`
       : null
 
+  // Dry-run state
+  const [dryRunStatus, setDryRunStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
+  const [dryRunResult, setDryRunResult] = useState<DryRunResult | null>(null)
+  const [dryRunError, setDryRunError] = useState<string | null>(null)
+
   function updateDraft(patch: Partial<AlertRule>) {
     setDraft((prev) => ({ ...prev, ...patch }))
     setError(null)
     setWarning(null)
+    // Reset dry-run results when rule changes
+    setDryRunResult(null)
+    setDryRunStatus('idle')
   }
 
   function handleTypeChange(type: AlertRuleType) {
@@ -217,20 +226,26 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
     if (draft.type === 'FunctionCalled') {
       if (!draft.function_name?.trim()) {
         setError('Enter a function name')
-        return
+        return false
       }
       if (!isValidFunctionName(draft.function_name.trim())) {
         setError('Function name must start with a letter or underscore, contain only alphanumeric characters and underscores')
-        return
+        return false
       }
     }
     if (draft.type === 'AdminFunctionCalled') {
       if (!draft.function_names?.length) {
         setError('Enter at least one function name')
-        return
+        return false
       }
-      // Sort function names for consistency
-      draft.function_names = [...draft.function_names].sort()
+    }
+    return true
+  }
+
+  function addRule() {
+    if (!validateDraft()) return
+    if (draft.type === 'AdminFunctionCalled') {
+      draft.function_names = [...(draft.function_names ?? [])].sort()
     }
     const newRule = { ...draft }
     if (editingIndex !== null) {
@@ -251,6 +266,8 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
     setDraft(emptyRule())
     setError(null)
     setWarning(null)
+    setDryRunResult(null)
+    setDryRunStatus('idle')
   }
 
   function startEdit(index: number) {
@@ -496,6 +513,23 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
             </svg>
             {editingIndex !== null ? 'Update Rule' : 'Add Rule'}
           </button>
+
+          {isDraftTestable() && (
+            <button
+              type="button"
+              onClick={handleTestRule}
+              disabled={dryRunStatus === 'running'}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-sm font-medium text-zinc-200 transition-colors"
+              title={!contractId ? 'Enter a contract ID to enable dry-run testing' : 'Evaluate this rule against the last 20 transactions'}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {dryRunStatus === 'running' ? 'Testing…' : 'Test Rule'}
+            </button>
+          )}
+
           {editingIndex !== null && (
             <button
               type="button"
@@ -516,6 +550,32 @@ export default function RuleBuilder({ rules, onChange, onRulesChanged }: RuleBui
             Save as Template
           </button>
         </div>
+
+        {/* Dry-run results */}
+        {dryRunStatus === 'done' && dryRunResult && (
+          <div className="mt-3 rounded-lg bg-zinc-900 border border-zinc-700 p-3 space-y-2">
+            <p className="text-xs font-semibold text-zinc-300">
+              Dry-run results:{' '}
+              <span className={dryRunResult.matched > 0 ? 'text-amber-400' : 'text-emerald-400'}>
+                {dryRunResult.matched} of {dryRunResult.total} recent transactions
+              </span>{' '}
+              would have matched
+            </p>
+            {dryRunResult.matchedHashes.length > 0 && (
+              <ul className="space-y-1 max-h-36 overflow-y-auto">
+                {dryRunResult.matchedHashes.map((hash) => (
+                  <li key={hash} className="text-xs font-mono text-zinc-400 truncate">
+                    {hash.slice(0, 16)}…{hash.slice(-8)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {dryRunStatus === 'error' && dryRunError && (
+          <p className="text-xs text-red-400 mt-2">Dry-run failed: {dryRunError}</p>
+        )}
       </div>
 
       {rules.length > 0 && (

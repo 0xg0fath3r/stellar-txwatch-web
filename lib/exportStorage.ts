@@ -1,9 +1,7 @@
-export interface ContractExportSnapshot {
-  version: 1;
-  exportedAt: string;
-  count: number;
-  contracts: StoredContractExport[];
-}
+import type { WatchedContract } from '@/types'
+
+/** The snapshot file format version. Increment when the schema changes. */
+const SNAPSHOT_VERSION = 1 as const
 
 export interface StoredContractExport {
   id: string;
@@ -36,52 +34,56 @@ function normalizeContract(contract: StoredContractExport): StoredContractExport
 
 function readContractsFromStorage(storageKey: string): StoredContractExport[] {
   try {
-    const raw = localStorage.getItem(storageKey);
-    if (!raw) return [];
-    return JSON.parse(raw) as StoredContractExport[];
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return []
+    return JSON.parse(raw) as WatchedContract[]
   } catch {
-    console.warn(`[exportStorage] Could not read key "${storageKey}" from localStorage`);
-    return [];
+    console.warn(`[exportStorage] Could not read key "${storageKey}" from localStorage`)
+    return []
   }
 }
 
 export function buildContractSnapshot(
-  storageKey = 'txwatch:contracts',
+  storageKey = CONTRACTS_STORAGE_KEY,
 ): ContractExportSnapshot {
   const contracts = readContractsFromStorage(storageKey).map(normalizeContract);
   return {
-    version: 1,
+    version: SNAPSHOT_VERSION,
     exportedAt: new Date().toISOString(),
     count: contracts.length,
     contracts,
-  };
+  }
 }
 
 export function exportContractsAsJson(storageKey?: string): string {
-  return JSON.stringify(buildContractSnapshot(storageKey), null, 2);
+  return JSON.stringify(buildContractSnapshot(storageKey), null, 2)
 }
 
 export function exportContractsAsBlob(storageKey?: string): Blob {
-  return new Blob([exportContractsAsJson(storageKey)], { type: 'application/json' });
+  return new Blob([exportContractsAsJson(storageKey)], { type: 'application/json' })
 }
 
+/**
+ * Validates and parses a JSON string that was previously exported via
+ * `exportContractsAsJson`. Throws a descriptive error on invalid input.
+ */
 export function parseContractSnapshot(json: string): ContractExportSnapshot {
-  let parsed: unknown;
+  let parsed: unknown
   try {
-    parsed = JSON.parse(json);
+    parsed = JSON.parse(json)
   } catch {
-    throw new Error('Invalid JSON: cannot parse contract snapshot');
+    throw new Error('Invalid JSON: cannot parse contract snapshot')
   }
 
   if (
     typeof parsed !== 'object' ||
     parsed === null ||
-    (parsed as ContractExportSnapshot).version !== 1 ||
+    (parsed as ContractExportSnapshot).version !== SNAPSHOT_VERSION ||
     !Array.isArray((parsed as ContractExportSnapshot).contracts)
   ) {
     throw new Error(
       'Invalid snapshot format: expected { version: 1, contracts: [...] }',
-    );
+    )
   }
 
   const snapshot = parsed as ContractExportSnapshot;
