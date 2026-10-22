@@ -1,24 +1,20 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { WatchedContract, Network } from '@/types'
-import { getContracts, getAlerts } from '@/lib/storage'
-import {
-  exportContractsAsBlob,
-  parseContractSnapshot,
-  validateSnapshotContracts,
-  restoreContractSnapshot,
-} from '@/lib/exportStorage'
+import { getContracts, getAlerts, removeContract } from '@/lib/storage'
 import ContractCard from '@/components/ContractCard'
 import EmptyState from '@/components/EmptyState'
+import { checkContractExistence } from '@/lib/hooks/useContracts'
 
 type ViewMode = 'flat' | 'grouped'
 type NetworkFilter = 'all' | Network
 type SortOption = 'newest' | 'oldest' | 'label-asc' | 'label-desc'
 
 const PAGE_SIZE = 12
+const UNDO_WINDOW_MS = 8000
 
 const NETWORK_LABELS: Record<Network, string> = {
   mainnet: 'Mainnet',
@@ -57,14 +53,15 @@ function sortContracts(contracts: WatchedContract[], sortBy: SortOption) {
 
 export default function ContractsPage() {
   const searchParams = useSearchParams()
-  const [allContracts, setAllContracts] = useState<WatchedContract[]>([])
+  const { contracts: allContracts, loading } = useContracts()
+  const lastAlertTimes = useLastAlertTimes()
   const [networkFilter, setNetworkFilter] = useState<NetworkFilter>('all')
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [search, setSearch] = useState(() => searchParams?.get('q') ?? '')
-  const [mounted, setMounted] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('flat')
   const [page, setPage] = useState(1)
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
+  const [missingIds, setMissingIds] = useState<Set<string>>(new Set())
 
   // Export / Import state
   const importInputRef = useRef<HTMLInputElement>(null)
@@ -74,10 +71,39 @@ export default function ContractsPage() {
   const [pendingSnapshot, setPendingSnapshot] = useState<ReturnType<typeof parseContractSnapshot> | null>(null)
 
   useEffect(() => {
+    document.title = 'Contracts · TxWatch'
     const all = getContracts()
     setAllContracts(all)
     setMounted(true)
   }, [])
+
+  // Batched existence check for testnet/futurenet contracts (these networks reset periodically)
+  useEffect(() => {
+    if (!mounted) return
+    const candidates = allContracts.filter(
+      (contract) => contract.network === 'testnet' || contract.network === 'futurenet'
+    )
+    if (candidates.length === 0) return
+
+    let cancelled = false
+    checkContractExistence(candidates).then((missing) => {
+      if (cancelled) return
+      setMissingIds(new Set(missing))
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [allContracts, mounted])
+
+  const removeMissing = () => {
+    for (const id of missingIds) {
+      const contract = allContracts.find((c) => c.id === id)
+      if (contract) removeContract(contract.id)
+    }
+    setAllContracts((current) => current.filter((contract) => !missingIds.has(contract.id)))
+    setMissingIds(new Set())
+  }
 
   // Check for a recently-created contract id in sessionStorage and highlight it once
   useEffect(() => {
@@ -97,6 +123,45 @@ export default function ContractsPage() {
   useEffect(() => {
     setPage(1)
   }, [networkFilter, search])
+
+  const refreshContracts = useCallback(() => {
+    setAllContracts(getContracts())
+  }, [])
+
+  const clearUndoTimer = useCallback(() => {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current)
+      undoTimerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => clearUndoTimer()
+  }, [clearUndoTimer])
+
+  const handleDelete = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return
+      // Commit any previously pending deletion before starting a new one.
+      clearUndoTimer()
+      removeContractDeferred(ids)
+      refreshContracts()
+      setPendingUndo({ ids, count: ids.length })
+      undoTimerRef.current = setTimeout(() => {
+        undoTimerRef.current = null
+        setPendingUndo(null)
+      }, UNDO_WINDOW_MS)
+    },
+    [clearUndoTimer, refreshContracts]
+  )
+
+  const handleUndo = useCallback(() => {
+    if (!pendingUndo) return
+    clearUndoTimer()
+    restoreContracts(pendingUndo.ids)
+    setPendingUndo(null)
+    refreshContracts()
+  }, [clearUndoTimer, pendingUndo, refreshContracts])
 
   const networkFiltered = useMemo(() => {
     if (networkFilter === 'all') {
@@ -142,63 +207,11 @@ export default function ContractsPage() {
     return groups
   }, [sorted])
 
-  // ---------- Export / Import ----------
-
-  function handleExport() {
-    const blob = exportContractsAsBlob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `txwatch-backup-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  function handleImportFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setImportError(null)
-    setImportSuccess(null)
-
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      try {
-        const json = event.target?.result as string
-        const snapshot = parseContractSnapshot(json)
-        const validationErrors = validateSnapshotContracts(snapshot)
-        if (validationErrors.length > 0) {
-          setImportError(`Import rejected: ${validationErrors[0]}`)
-          return
-        }
-        setPendingSnapshot(snapshot)
-        setShowImportConfirm(true)
-      } catch (err) {
-        setImportError(err instanceof Error ? err.message : 'Failed to read file')
-      }
-    }
-    reader.readAsText(file)
-    // Reset input so the same file can be re-imported
-    e.target.value = ''
-  }
-
-  function confirmImport() {
-    if (!pendingSnapshot) return
-    restoreContractSnapshot(pendingSnapshot)
-    setAllContracts(getContracts())
-    setShowImportConfirm(false)
-    setPendingSnapshot(null)
-    setImportSuccess(`Restored ${pendingSnapshot.count} contract${pendingSnapshot.count !== 1 ? 's' : ''} from backup`)
-  }
-
-  function cancelImport() {
-    setShowImportConfirm(false)
-    setPendingSnapshot(null)
-  }
-
-  if (!mounted) return null
+  if (loading) return null
 
   const hasAnyContracts = allContracts.length > 0
   const hasFilteredContracts = filtered.length > 0
+  const missingCount = missingIds.size
 
   return (
     <div className="space-y-6">
@@ -356,57 +369,23 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* Import error / success messages */}
-      {importError && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-900/20 border border-red-800 px-4 py-3 text-sm text-red-400">
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          {importError}
-          <button type="button" onClick={() => setImportError(null)} className="ml-auto text-red-400 hover:text-red-200">✕</button>
-        </div>
-      )}
-      {importSuccess && (
-        <div className="flex items-center gap-2 rounded-lg bg-emerald-900/20 border border-emerald-800 px-4 py-3 text-sm text-emerald-400">
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          {importSuccess}
-          <button type="button" onClick={() => setImportSuccess(null)} className="ml-auto text-emerald-400 hover:text-emerald-200">✕</button>
-        </div>
-      )}
-
-      {/* Import confirmation modal */}
-      {showImportConfirm && pendingSnapshot && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 max-w-sm w-full space-y-4">
-            <h3 className="text-lg font-semibold text-zinc-100">Restore from Backup?</h3>
-            <div className="space-y-2 text-sm text-zinc-400">
-              <p>
-                This will overwrite your current contracts with{' '}
-                <span className="text-zinc-200 font-medium">{pendingSnapshot.count} contract{pendingSnapshot.count !== 1 ? 's' : ''}</span>{' '}
-                from the backup exported on{' '}
-                <span className="text-zinc-200">{new Date(pendingSnapshot.exportedAt).toLocaleDateString()}</span>.
-              </p>
-              <p className="text-xs text-zinc-500">Existing contracts not in the backup will be removed.</p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={confirmImport}
-                className="flex-1 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
-              >
-                Restore
-              </button>
-              <button
-                type="button"
-                onClick={cancelImport}
-                className="flex-1 px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
+      {missingCount > 0 && (
+        <div className="flex flex-col gap-3 rounded-lg border border-amber-700/50 bg-amber-950/40 px-4 py-3 text-sm text-amber-200 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+            <span>
+              {missingCount} contract{missingCount === 1 ? '' : 's'} not found — network may have been reset
+            </span>
           </div>
+          <button
+            type="button"
+            onClick={removeMissing}
+            className="inline-flex items-center justify-center rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-500"
+          >
+            Remove missing contracts
+          </button>
         </div>
       )}
 
@@ -456,8 +435,9 @@ export default function ContractsPage() {
                     <ContractCard
                       key={contract.id}
                       contract={contract}
-                      lastAlertTime={getAlerts(contract.contract_id)[0]?.timestamp}
+                      lastAlertTime={lastAlertTimes[contract.contract_id]}
                       highlight={highlightedId === contract.id}
+                      missing={missingIds.has(contract.id)}
                     />
                   ))}
                 </div>
@@ -472,8 +452,9 @@ export default function ContractsPage() {
               <ContractCard
                 key={contract.id}
                 contract={contract}
-                lastAlertTime={getAlerts(contract.contract_id)[0]?.timestamp}
+                lastAlertTime={lastAlertTimes[contract.contract_id]}
                 highlight={highlightedId === contract.id}
+                missing={missingIds.has(contract.id)}
               />
             ))}
           </div>
@@ -502,6 +483,20 @@ export default function ContractsPage() {
             </div>
           )}
         </>
+      )}
+
+      {pendingUndo && (
+        <Toast
+          message={
+            pendingUndo.count === 1
+              ? 'Contract deleted'
+              : `${pendingUndo.count} contracts deleted`
+          }
+          actionLabel="Undo"
+          onAction={handleUndo}
+          onDismiss={() => setPendingUndo(null)}
+          duration={UNDO_WINDOW_MS}
+        />
       )}
     </div>
   )

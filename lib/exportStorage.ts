@@ -3,20 +3,36 @@ import type { WatchedContract } from '@/types'
 /** The snapshot file format version. Increment when the schema changes. */
 const SNAPSHOT_VERSION = 1 as const
 
-/**
- * The localStorage key used by storage.ts.
- * Must stay in sync with CONTRACTS_KEY in lib/storage.ts.
- */
-const CONTRACTS_STORAGE_KEY = 'txwatch_contracts'
-
-export interface ContractExportSnapshot {
-  version: typeof SNAPSHOT_VERSION
-  exportedAt: string
-  count: number
-  contracts: WatchedContract[]
+export interface StoredContractExport {
+  id: string;
+  address: string;
+  label: string;
+  network: string;
+  notes?: string;
+  [key: string]: unknown;
 }
 
-function readContractsFromStorage(storageKey: string): WatchedContract[] {
+const MAX_NOTES_LENGTH = 1000;
+
+function normalizeNotes(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.slice(0, MAX_NOTES_LENGTH);
+}
+
+function normalizeContract(contract: StoredContractExport): StoredContractExport {
+  const normalized: StoredContractExport = { ...contract };
+  const notes = normalizeNotes(contract.notes);
+  if (notes === undefined) {
+    delete normalized.notes;
+  } else {
+    normalized.notes = notes;
+  }
+  return normalized;
+}
+
+function readContractsFromStorage(storageKey: string): StoredContractExport[] {
   try {
     const raw = localStorage.getItem(storageKey)
     if (!raw) return []
@@ -30,7 +46,7 @@ function readContractsFromStorage(storageKey: string): WatchedContract[] {
 export function buildContractSnapshot(
   storageKey = CONTRACTS_STORAGE_KEY,
 ): ContractExportSnapshot {
-  const contracts = readContractsFromStorage(storageKey)
+  const contracts = readContractsFromStorage(storageKey).map(normalizeContract);
   return {
     version: SNAPSHOT_VERSION,
     exportedAt: new Date().toISOString(),
@@ -70,47 +86,9 @@ export function parseContractSnapshot(json: string): ContractExportSnapshot {
     )
   }
 
-  return parsed as ContractExportSnapshot
-}
-
-/**
- * Validates that each contract in a snapshot has the minimum required fields.
- * Returns an array of error strings (empty = valid).
- */
-export function validateSnapshotContracts(snapshot: ContractExportSnapshot): string[] {
-  const errors: string[] = []
-  const requiredKeys: (keyof WatchedContract)[] = [
-    'id',
-    'label',
-    'contract_id',
-    'network',
-    'rules',
-    'webhook_url',
-  ]
-
-  snapshot.contracts.forEach((contract, index) => {
-    for (const key of requiredKeys) {
-      if (!(key in contract) || contract[key] === undefined || contract[key] === null) {
-        errors.push(`Contract at index ${index} is missing required field: "${key}"`)
-      }
-    }
-    // Validate network value
-    const validNetworks = ['mainnet', 'testnet', 'futurenet']
-    if (contract.network && !validNetworks.includes(contract.network)) {
-      errors.push(`Contract at index ${index} has unknown network: "${contract.network}"`)
-    }
-  })
-
-  return errors
-}
-
-/**
- * Restore a snapshot by writing all contracts back to localStorage.
- * Overwrites any existing contracts data.
- */
-export function restoreContractSnapshot(
-  snapshot: ContractExportSnapshot,
-  storageKey = CONTRACTS_STORAGE_KEY,
-): void {
-  localStorage.setItem(storageKey, JSON.stringify(snapshot.contracts))
+  const snapshot = parsed as ContractExportSnapshot;
+  return {
+    ...snapshot,
+    contracts: snapshot.contracts.map(normalizeContract),
+  };
 }
