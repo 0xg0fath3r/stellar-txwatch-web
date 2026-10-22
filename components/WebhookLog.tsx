@@ -34,6 +34,9 @@ function exportCSV(alerts: AlertPayload[]) {
       a.transaction_hash,
       a.function_name ?? 'N/A',
       a.amount !== undefined ? `${a.amount} XLM` : 'N/A',
+      a.delivery_status ?? 'unknown',
+      a.delivery_retry_count !== undefined ? String(a.delivery_retry_count) : 'N/A',
+      a.delivery_last_attempt ? new Date(a.delivery_last_attempt).toLocaleString() : 'N/A',
     ]),
   ]
   const csv = rows.map((r) => r.map((v) => `"${v}"`).join(',')).join('\n')
@@ -79,8 +82,22 @@ export default function WebhookLog({ alerts, network }: WebhookLogProps) {
     )
   }
 
+  const persistentFailures = alerts.filter((a) => a.delivery_status === 'failed').length
+
   return (
     <div className="space-y-4">
+      {persistentFailures > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>
+            {persistentFailures} webhook {persistentFailures === 1 ? 'delivery has' : 'deliveries have'} persistently failed.
+            Check your endpoint and alert rules.
+          </span>
+        </div>
+      )}
+
       {/* Filter Controls */}
       <div className="flex flex-wrap gap-2">
         <button
