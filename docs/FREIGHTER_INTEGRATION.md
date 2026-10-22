@@ -9,29 +9,52 @@ Freighter is a browser extension that manages Stellar keypairs and signs transac
 - Verify the user's current network (Mainnet, Testnet, Futurenet)
 - Sign and submit transactions to the Stellar network
 
-## Browser API
+## Freighter API Package
 
-The Freighter extension exposes a global `window.freighter` object with these methods:
+The dashboard talks to Freighter through the official [`@stellar/freighter-api`](https://www.npmjs.com/package/@stellar/freighter-api) package rather than the injected `window.freighter` global. The package handles extension detection, permission requests and error reporting consistently across browsers.
+
+Install it with:
+
+```bash
+npm install @stellar/freighter-api
+```
+
+The methods used by the dashboard are:
 
 ```ts
-interface Freighter {
-  isConnected(): Promise<boolean>
-  getPublicKey(): Promise<string>
-  getNetwork(): Promise<string>
-  signTransaction(txXdr: string, options: SignOptions): Promise<string>
-}
+import {
+  isConnected,
+  requestAccess,
+  getPublicKey,
+  getNetworkDetails,
+  signTransaction,
+} from '@stellar/freighter-api'
 
-interface SignOptions {
+isConnected(): Promise<{ isConnected: boolean; error?: FreighterApiError }>
+requestAccess(): Promise<{ address: string; error?: FreighterApiError }>
+getPublicKey(): Promise<{ publicKey: string; error?: FreighterApiError }>
+getNetworkDetails(): Promise<{
+  network: string
+  networkUrl: string
   networkPassphrase: string
-}
+  error?: FreighterApiError
+}>
+signTransaction(
+  txXdr: string,
+  options: { networkPassphrase: string; address?: string }
+): Promise<{ signedTxXdr: string; signerAddress: string; error?: FreighterApiError }>
 ```
+
+Every call returns a result object. When `error` is present the call failed; the `error.code` values used by the dashboard are `NOT_INSTALLED`, `NOT_ALLOWED` and `LOCKED`.
 
 ## Connection Flow
 
 ### 1. Check if Freighter is installed
 
 ```ts
-if (!window.freighter) {
+const { isConnected: installed, error } = await isConnected()
+
+if (error?.code === 'NOT_INSTALLED') {
   // Extension not installed — prompt user to install
   window.open('https://www.freighter.app/', '_blank')
 }
@@ -40,9 +63,9 @@ if (!window.freighter) {
 ### 2. Check if already connected
 
 ```ts
-const isConnected = await window.freighter.isConnected()
-if (isConnected) {
-  const publicKey = await window.freighter.getPublicKey()
+const { isConnected: connected } = await isConnected()
+if (connected) {
+  const { publicKey } = await getPublicKey()
   // User is already connected
 }
 ```
@@ -50,24 +73,28 @@ if (isConnected) {
 ### 3. Request connection
 
 ```ts
-try {
-  const publicKey = await window.freighter.getPublicKey()
+const { address, error } = await requestAccess()
+
+if (error?.code === 'NOT_ALLOWED') {
+  // User rejected the connection request
+} else if (error?.code === 'LOCKED') {
+  // Freighter is locked — ask the user to unlock it
+} else if (address) {
   // User approved connection
-} catch (err) {
-  // User rejected connection
 }
 ```
 
 ## Getting User Info
 
-After connection, retrieve the user's public key and network:
+After connection, retrieve the user's public key and network details:
 
 ```ts
-const publicKey = await window.freighter.getPublicKey()
+const { publicKey } = await getPublicKey()
 // e.g. "GAAAA..."
 
-const network = await window.freighter.getNetwork()
-// e.g. "TESTNET", "PUBLIC", "FUTURENET"
+const { network, networkPassphrase } = await getNetworkDetails()
+// network: e.g. "TESTNET", "PUBLIC", "FUTURENET"
+// networkPassphrase: e.g. "Test SDF Network ; September 2015"
 ```
 
 ## Network Passphrases
@@ -208,9 +235,9 @@ export async function buildSignAndSubmitTransaction({
 
 ### FreighterConnect Component
 
-`components/FreighterConnect.tsx` wraps the Freighter API and provides:
+`components/FreighterConnect.tsx` wraps `@stellar/freighter-api` and provides:
 - Connection state management
-- Error handling (extension not installed, user rejection)
+- Distinct handling of the "not installed", "not allowed" and "locked" states
 - UI for connected/disconnected states
 - Disconnect button
 
@@ -233,11 +260,14 @@ export default function MyPage() {
 To verify the wallet is connected before saving data:
 
 ```ts
-function isWalletConnected(): boolean {
-  return typeof window !== 'undefined' && !!window.freighter
+import { isConnected } from '@stellar/freighter-api'
+
+async function isWalletConnected(): Promise<boolean> {
+  const { isConnected: connected } = await isConnected()
+  return connected
 }
 
-if (!isWalletConnected()) {
+if (!(await isWalletConnected())) {
   setError('Connect your Freighter wallet first')
   return
 }
@@ -248,7 +278,9 @@ if (!isWalletConnected()) {
 The dashboard supports three networks: Mainnet, Testnet, and Futurenet. When a user selects a network for contract monitoring, verify it matches their wallet's current network:
 
 ```ts
-const walletNetwork = await window.freighter.getNetwork()
+import { getNetworkDetails } from '@stellar/freighter-api'
+
+const { network: walletNetwork } = await getNetworkDetails()
 const selectedNetwork = 'testnet' // from form
 
 if (walletNetwork !== selectedNetwork.toUpperCase()) {
@@ -279,4 +311,18 @@ To test Freighter integration locally:
 3. Switch to Testnet in the extension settings
 4. Run `npm run dev` and test the connection flow
 
-For automated testing, mock the `window.freighter` object in your test setup.
+For automated testing, mock the `@stellar/freighter-api` module in your test setup:
+
+```ts
+jest.mock('@stellar/freighter-api', () => ({
+  isConnected: jest.fn().mockResolvedValue({ isConnected: true }),
+  requestAccess: jest.fn().mockResolvedValue({ address: 'GAAAA...' }),
+  getPublicKey: jest.fn().mockResolvedValue({ publicKey: 'GAAAA...' }),
+  getNetworkDetails: jest.fn().mockResolvedValue({
+    network: 'TESTNET',
+    networkUrl: 'https://horizon-testnet.stellar.org',
+    networkPassphrase: 'Test SDF Network ; September 2015',
+  }),
+  signTransaction: jest.fn().mockResolvedValue({ signedTxXdr: '...', signerAddress: 'GAAAA...' }),
+}))
+```
