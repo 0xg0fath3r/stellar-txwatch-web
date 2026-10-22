@@ -20,6 +20,10 @@ const sample = [
   { id: 'c1', address: 'GABC', label: 'Alpha', network: 'mainnet' },
   { id: 'c2', address: 'GDEF', label: 'Beta',  network: 'testnet' },
 ];
+const sampleWithNotes = [
+  { id: 'c1', address: 'GABC', label: 'Alpha', network: 'mainnet', notes: 'Owner: team-a\nRunbook: https://example.com/runbook' },
+  { id: 'c2', address: 'GDEF', label: 'Beta',  network: 'testnet' },
+];
 
 beforeEach(() => localStorageMock.clear());
 
@@ -47,6 +51,13 @@ describe('buildContractSnapshot', () => {
     expect(() => new Date(snap.exportedAt)).not.toThrow();
     expect(snap.exportedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
+
+  it('includes the notes field in the snapshot', () => {
+    localStorage.setItem(KEY, JSON.stringify(sampleWithNotes));
+    const snap = buildContractSnapshot(KEY);
+    expect(snap.contracts[0].notes).toBe('Owner: team-a\nRunbook: https://example.com/runbook');
+    expect(snap.contracts[1].notes).toBeUndefined();
+  });
 });
 
 describe('exportContractsAsJson', () => {
@@ -62,6 +73,12 @@ describe('exportContractsAsJson', () => {
     const parsed = JSON.parse(json);
     expect(parsed.version).toBe(1);
     expect(parsed.contracts).toHaveLength(2);
+  });
+
+  it('includes notes in the exported JSON', () => {
+    localStorage.setItem(KEY, JSON.stringify(sampleWithNotes));
+    const parsed = JSON.parse(exportContractsAsJson(KEY));
+    expect(parsed.contracts[0].notes).toBe('Owner: team-a\nRunbook: https://example.com/runbook');
   });
 });
 
@@ -86,5 +103,12 @@ describe('parseContractSnapshot', () => {
   it('throws when contracts field is missing', () => {
     const bad = JSON.stringify({ version: 1 });
     expect(() => parseContractSnapshot(bad)).toThrow('Invalid snapshot format');
+  });
+
+  it('round-trips the notes field through export and parse', () => {
+    localStorage.setItem(KEY, JSON.stringify(sampleWithNotes));
+    const snap = parseContractSnapshot(exportContractsAsJson(KEY));
+    expect(snap.contracts[0].notes).toBe('Owner: team-a\nRunbook: https://example.com/runbook');
+    expect(snap.contracts[1].notes).toBeUndefined();
   });
 });
