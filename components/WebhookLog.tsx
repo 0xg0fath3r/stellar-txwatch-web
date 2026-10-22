@@ -54,6 +54,7 @@ const VIEWPORT_HEIGHT = 480
 
 export default function WebhookLog({ alerts, network }: WebhookLogProps) {
   const [selectedFilter, setSelectedFilter] = useState<AlertRuleType | null>(null)
+  const { formatDateTime, isoString, mode, toggleMode } = useTimezone()
 
   // Filtering operates on the full alerts array; only rendering is virtualised.
   const filteredAlerts = selectedFilter

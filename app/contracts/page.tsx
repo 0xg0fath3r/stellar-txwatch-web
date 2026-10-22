@@ -64,6 +64,7 @@ export default function ContractsPage() {
   const [missingIds, setMissingIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
+    document.title = 'Contracts · TxWatch'
     const all = getContracts()
     setAllContracts(all)
     setMounted(true)

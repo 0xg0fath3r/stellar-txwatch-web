@@ -36,7 +36,10 @@ export default function NewContractPage() {
   const testAbortRef = useRef<AbortController | null>(null)
   const contractCheckSeqRef = useRef(0)
 
-  useEffect(() => () => testAbortRef.current?.abort(), [])
+  useEffect(() => {
+    document.title = 'Add Contract · TxWatch'
+    return () => { testAbortRef.current?.abort() }
+  }, [])
 
   async function runContractCheck(id: string, net: Network) {
     const trimmed = id.trim()
@@ -114,6 +117,7 @@ export default function NewContractPage() {
     }
 
     setSaving(true)
+    const now = Date.now()
     const contract: WatchedContract = {
       id: crypto.randomUUID(),
       label: label.trim(),

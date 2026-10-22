@@ -31,6 +31,8 @@ function trackEventStub(
   _properties?: AnalyticsEventProperties,
 ): void {
   // no-op — intentionally empty until a provider is configured
+  void _event
+  void _properties
 }
 
 export function useAnalytics() {

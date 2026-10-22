@@ -17,6 +17,7 @@ export default function ContractCard({ contract, lastAlertTime, highlight, missi
   const hasWebhook = Boolean(contract.webhook_url)
   const ttlWarning = getTtlWarning(contract.instance_live_until_ledger_seq)
   const [active, setActive] = useState(highlight)
+  const { formatDate, isoString, mode } = useTimezone()
 
   useEffect(() => {
     if (!highlight) return
@@ -92,7 +93,9 @@ export default function ContractCard({ contract, lastAlertTime, highlight, missi
           {contract.rules.length === 1 ? 'rule' : 'rules'} {isPaused ? 'paused' : 'active'}
         </span>
         {lastAlertTime ? (
-          <span>Last alert {formatDate(lastAlertTime)}</span>
+          <span title={isoString(lastAlertTime)}>
+            Last alert {formatDate(lastAlertTime)}{mode === 'utc' ? ' UTC' : ''}
+          </span>
         ) : (
           <span>No alerts yet</span>
         )}

@@ -74,6 +74,13 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
     return () => clearTimeout(timer)
   }, [undoToast])
 
+  // Test webhook state (#424)
+  const [testStatus, setTestStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle')
+  const [testError, setTestError] = useState<string | null>(null)
+  const [testStatusCode, setTestStatusCode] = useState<number | null>(null)
+  const [testLatency, setTestLatency] = useState<number | null>(null)
+  const testAbortRef = useRef<AbortController | null>(null)
+
   useEffect(() => {
     const c = getContract(params.id)
     if (!c) { setContractNotFound(true); return }
@@ -170,6 +177,57 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
         setEventsError(true)
         setEventsLoading(false)
       })
+  }
+
+  // Clean up test controller on unmount
+  useEffect(() => {
+    return () => { testAbortRef.current?.abort() }
+  }, [])
+
+  // Update title when contract label changes (e.g. after metadata edit)
+  useEffect(() => {
+    if (contract) {
+      document.title = `${contract.label} · TxWatch`
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contract?.label])
+
+  async function handleTestWebhook() {
+    if (!contract) return
+    testAbortRef.current?.abort()
+    const controller = new AbortController()
+    testAbortRef.current = controller
+    setTestStatus('sending')
+    setTestError(null)
+    setTestStatusCode(null)
+    setTestLatency(null)
+    const start = performance.now()
+    try {
+      const { status, ok } = await sendTestWebhook(
+        contract.webhook_url,
+        contract.contract_id,
+        contract.network,
+        controller.signal
+      )
+      const elapsed = Math.round(performance.now() - start)
+      setTestLatency(elapsed)
+      setTestStatusCode(status)
+      if (ok) {
+        setTestStatus('ok')
+        addToast('Test webhook delivered successfully', 'success')
+      } else {
+        setTestStatus('error')
+        setTestError(`Server responded with ${status}`)
+        addToast(`Test webhook failed: ${status}`, 'error')
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return
+      const elapsed = Math.round(performance.now() - start)
+      setTestLatency(elapsed)
+      setTestStatus('error')
+      setTestError(err instanceof Error ? err.message : 'Request failed')
+      addToast(`Test webhook failed: ${err instanceof Error ? err.message : 'Request failed'}`, 'error')
+    }
   }
 
   function handleDelete() {
@@ -385,7 +443,18 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
           <div className="flex items-center justify-between mb-1">
             <p className="text-xs text-zinc-500">Webhook URL</p>
-            <CopyButton text={contract.webhook_url} />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestWebhook}
+                disabled={testStatus === 'sending'}
+                className="px-2 py-0.5 rounded-md border border-zinc-700 hover:border-zinc-500 text-xs text-zinc-300 hover:text-zinc-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Send a test payload to this webhook endpoint"
+              >
+                {testStatus === 'sending' ? 'Sending…' : testStatus === 'ok' ? `${testStatusCode} OK` : testStatus === 'error' ? `${testStatusCode ?? 'ERR'} Failed` : 'Send test'}
+              </button>
+              <CopyButton text={contract.webhook_url} />
+            </div>
           </div>
           <a
             href={contract.webhook_url}
@@ -395,6 +464,14 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
           >
             {contract.webhook_url}
           </a>
+          {testStatus === 'error' && testError && (
+            <p className="mt-1 text-xs text-red-400">{testError}</p>
+          )}
+          {testStatus === 'ok' && (
+            <p className="mt-1 text-xs text-emerald-400">
+              Test payload delivered — {testStatusCode} received{testLatency !== null ? ` · ${testLatency}ms` : ''}
+            </p>
+          )}
         </div>
         {contract.webhook_secret && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
@@ -422,8 +499,12 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
             <p className="text-sm text-zinc-300">No alerts yet</p>
           ) : (
             <>
-              <p className="text-sm text-zinc-300">{formatDate(alerts[0].timestamp)}</p>
-              <p className="text-xs text-zinc-500 mt-1">{new Date(alerts[0].timestamp).toLocaleTimeString()}</p>
+              <p className="text-sm text-zinc-300" title={isoString(alerts[0].timestamp)}>{tzFormatDate(alerts[0].timestamp)}</p>
+              <p className="text-xs text-zinc-500 mt-1" title={isoString(alerts[0].timestamp)}>
+                {mode === 'utc'
+                  ? new Date(alerts[0].timestamp).toLocaleTimeString('en-US', { timeZone: 'UTC' }) + ' UTC'
+                  : new Date(alerts[0].timestamp).toLocaleTimeString()}
+              </p>
             </>
           )}
         </div>
@@ -512,6 +593,21 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
             </>
           )}
         </div>
+      </div>
+
+      {/* Timezone toggle (#425) */}
+      <div className="flex items-center gap-2 text-xs text-zinc-500">
+        <span>Timezone:</span>
+        <button
+          type="button"
+          onClick={toggleMode}
+          className="px-2 py-1 rounded-md border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-zinc-100 transition-colors"
+          title="Toggle between local and UTC time display"
+        >
+          {mode === 'utc' ? 'UTC' : 'Local'}
+        </button>
+        <span className="text-zinc-600">·</span>
+        <span>Hover any timestamp to see full ISO-8601</span>
       </div>
 
       {/* Active Rules */}

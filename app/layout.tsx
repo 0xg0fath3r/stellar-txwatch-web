@@ -7,7 +7,10 @@ import MobileNav from '@/components/MobileNav'
 import WebVitals from '@/components/WebVitals'
 
 export const metadata: Metadata = {
-  title: 'TxWatch — Soroban Contract Monitoring',
+  title: {
+    default: 'TxWatch',
+    template: '%s · TxWatch',
+  },
   description: 'Real-time monitoring and alerts for Soroban smart contracts',
 }
 
@@ -49,6 +52,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
           <StorageProvider>{children}</StorageProvider>
         </main>
+        </ToastProvider>
+        </TimezoneProvider>
       </body>
     </html>
   )

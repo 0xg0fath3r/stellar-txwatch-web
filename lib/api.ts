@@ -3,12 +3,6 @@ import type { Network } from '@/types'
 
 const BASE_URL = env.NEXT_PUBLIC_API_URL
 
-function getAuthHeaders(): Record<string, string> {
-  // Extension point for future authenticated requests
-  // Implement token/header logic here
-  return {}
-}
-
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit
@@ -169,19 +163,25 @@ export async function sendTestWebhook(
     horizon_link: `${HORIZON_URLS[network]}/transactions/test`,
   }
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  let signal: AbortSignal | undefined
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+  if (typeof timeoutOrSignal === 'number') {
+    const controller = new AbortController()
+    timeoutId = setTimeout(() => controller.abort(), timeoutOrSignal)
+    signal = controller.signal
+  } else {
+    signal = timeoutOrSignal
+  }
 
   try {
     const res = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: controller.signal,
+      signal,
     })
-    if (!res.ok) {
-      throw new Error(`Webhook returned ${res.status}`)
-    }
+    return { status: res.status, ok: res.ok }
   } catch (error) {
     const err = error as { name?: string }
     if (err?.name === 'AbortError') {
@@ -189,6 +189,8 @@ export async function sendTestWebhook(
     }
     throw error
   } finally {
-    clearTimeout(timeoutId)
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId)
+    }
   }
 }
