@@ -1,21 +1,7 @@
-import { HORIZON_URLS } from '@/lib/stellar'
-import { getApiKey } from '@/lib/storage'
+import { HORIZON_URLS, isValidUrl } from '@/lib/stellar'
 import type { Network } from '@/types'
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
-
-/**
- * Returns authentication headers when an API key has been saved.
- * When `NEXT_PUBLIC_API_URL` is configured this header is included on
- * every request made via `apiFetch`.
- */
-function getAuthHeaders(): Record<string, string> {
-  const key = getApiKey()
-  if (key) {
-    return { Authorization: `Bearer ${key}` }
-  }
-  return {}
-}
+const BASE_URL = env.NEXT_PUBLIC_API_URL
 
 export async function apiFetch<T>(
   path: string,
@@ -51,82 +37,124 @@ export async function apiFetch<T>(
   return res.json() as Promise<T>
 }
 
-/**
- * Pings the txwatch-core health endpoint with the stored API key.
- *
- * Tries `GET /health` first. If the server returns 404 we fall back to
- * `GET /` so the button works even when the health route is not exposed.
- *
- * Returns `{ ok, status, message }`:
- * - `ok`      — true when a 2xx response is received
- * - `status`  — the HTTP status code (or 0 on network error)
- * - `message` — human-readable result string shown in the UI
- */
-export async function testApiConnection(): Promise<{
-  ok: boolean
-  status: number
-  message: string
-}> {
-  if (!BASE_URL) {
-    return {
-      ok: false,
-      status: 0,
-      message: 'NEXT_PUBLIC_API_URL is not configured',
-    }
-  }
-
-  try {
-    const headers = new Headers({ 'Content-Type': 'application/json' })
-    for (const [name, value] of Object.entries(getAuthHeaders())) {
-      headers.set(name, value)
-    }
-
-    const res = await fetch(`${BASE_URL}/health`, { headers })
-
-    // If /health doesn't exist, try the root to confirm reachability
-    if (res.status === 404) {
-      const rootRes = await fetch(`${BASE_URL}/`, { headers })
-      const ok = rootRes.ok
-      return {
-        ok,
-        status: rootRes.status,
-        message: ok
-          ? `Connected (${rootRes.status})`
-          : `Server reachable but returned ${rootRes.status}`,
-      }
-    }
-
-    const ok = res.ok
-    return {
-      ok,
-      status: res.status,
-      message: ok ? `Connected (${res.status})` : `Server returned ${res.status}`,
-    }
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err)
-    return { ok: false, status: 0, message: `Connection failed: ${detail}` }
-  }
+interface SorobanRpcResponse<T> {
+  result?: T
+  error?: { code?: number; message?: string; data?: unknown }
 }
 
-export interface TestWebhookResult {
-  status: number
-  ok: boolean
+async function sorobanRpcCall<T>(
+  network: Network,
+  method: string,
+  params: unknown
+): Promise<T> {
+  const url = SOROBAN_RPC_URLS[network]
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  })
+
+  if (!res.ok) {
+    throw new Error(`Soroban RPC HTTP ${res.status}`)
+  }
+
+  const body = (await res.json()) as SorobanRpcResponse<T>
+  if (body.error) {
+    throw new Error(body.error.message || `Soroban RPC error ${body.error.code}`)
+  }
+  if (body.result === undefined) {
+    throw new Error('Soroban RPC returned no result')
+  }
+  return body.result
+}
+
+export interface ContractInstanceInfo {
+  liveUntilLedgerSeq: number
 }
 
 /**
- * Sends a mock alert payload to a webhook URL so users can verify delivery
- * before going live. Returns `{ status, ok }` so callers can display the
- * HTTP response code.
- *
- * Pass an `AbortSignal` to cancel in-flight requests (e.g. on component
- * unmount or when the user navigates away).
+ * Fetches the contract instance entry from Soroban RPC and returns its
+ * `liveUntilLedgerSeq` (the ledger sequence at which the instance expires).
  */
+export async function fetchContractInstance(
+  contractId: string,
+  network: Network = 'testnet'
+): Promise<ContractInstanceInfo> {
+  const result = await sorobanRpcCall<{
+    entries?: Array<{ liveUntilLedgerSeq?: number | string } | null>
+  }>(network, 'getLedgerEntries', {
+    keys: [
+      {
+        type: 'contractData',
+        contract: contractId,
+        key: 'instance',
+        durability: 'persistent',
+      },
+    ],
+  })
+
+  const entry = result.entries?.find((e) => e != null)
+  if (!entry || entry.liveUntilLedgerSeq === undefined) {
+    throw new Error('Contract instance entry not found')
+  }
+
+  return { liveUntilLedgerSeq: Number(entry.liveUntilLedgerSeq) }
+}
+
+/**
+ * Invokes the token contract's `decimals()` function via Soroban RPC
+ * simulation and returns the token's decimal precision.
+ */
+export async function fetchTokenDecimals(
+  tokenContractId: string,
+  network: Network = 'testnet'
+): Promise<number> {
+  const result = await sorobanRpcCall<{
+    results?: Array<{ xdr?: string; error?: string } | null>
+  }>(network, 'simulateTransaction', {
+    transaction: {
+      // Minimal invoke host function for decimals()
+      // Callers may need to supply a fully-built transaction XDR in future.
+      contractId: tokenContractId,
+      function: 'decimals',
+      args: [],
+    },
+  })
+
+  const first = result.results?.[0]
+  if (!first || first.error) {
+    throw new Error(first?.error || 'Failed to simulate decimals() call')
+  }
+  if (!first.xdr) {
+    throw new Error('decimals() returned no value')
+  }
+
+  // The XDR encodes a ScVal u32; decode the trailing 4 bytes as a big-endian uint.
+  const hex = first.xdr.replace(/^0x/, '')
+  const bytes = hex.match(/.{1,2}/g) ?? []
+  if (bytes.length < 4) {
+    throw new Error('decimals() returned an unexpected value')
+  }
+  const tail = bytes.slice(-4)
+  const value =
+    ((parseInt(tail[0], 16) << 24) |
+      (parseInt(tail[1], 16) << 16) |
+      (parseInt(tail[2], 16) << 8) |
+      parseInt(tail[3], 16)) >>>
+    0
+  return value
+}
+
 export async function sendTestWebhook(
   webhookUrl: string,
   contractId: string,
   network: Network = 'testnet',
-  signal?: AbortSignal
-): Promise<TestWebhookResult> {
+  timeoutMs = 10000
+): Promise<void> {
+  if (!webhookUrl || !isValidUrl(webhookUrl)) {
+    throw new Error('Invalid webhook URL')
+  }
+
   const payload = {
     label: 'Test Alert',
     contract_id: contractId,
@@ -138,12 +166,34 @@ export async function sendTestWebhook(
     horizon_link: `${HORIZON_URLS[network]}/transactions/test`,
   }
 
-  const res = await fetch(webhookUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal,
-  })
+  let signal: AbortSignal | undefined
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
 
-  return { status: res.status, ok: res.ok }
+  if (typeof timeoutOrSignal === 'number') {
+    const controller = new AbortController()
+    timeoutId = setTimeout(() => controller.abort(), timeoutOrSignal)
+    signal = controller.signal
+  } else {
+    signal = timeoutOrSignal
+  }
+
+  try {
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    })
+    return { status: res.status, ok: res.ok }
+  } catch (error) {
+    const err = error as { name?: string }
+    if (err?.name === 'AbortError') {
+      throw new Error('Webhook request timed out')
+    }
+    throw error
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId)
+    }
+  }
 }

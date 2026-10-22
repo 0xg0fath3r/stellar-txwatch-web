@@ -16,8 +16,7 @@ export type AnalyticsEventName =
   | 'rule_edit_cancelled'
   | 'rule_added'
   | 'rule_removed'
-  | 'metadata_edit_opened'
-  | 'metadata_edit_saved'
+  | 'web_vital'
 
 export interface AnalyticsEventProperties {
   contractId?: string
@@ -33,6 +32,8 @@ function trackEventStub(
   _properties?: AnalyticsEventProperties,
 ): void {
   // no-op — intentionally empty until a provider is configured
+  void _event
+  void _properties
 }
 /* eslint-enable @typescript-eslint/no-unused-vars */
 
