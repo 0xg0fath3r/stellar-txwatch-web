@@ -1,249 +1,255 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
-import {
-  getContracts,
-  getAlerts,
-  onContractsChange,
-  onAlertsChange,
-} from '@/lib/storage'
-import { WatchedContract, AlertPayload, AlertRuleType, Network } from '@/types'
-import { truncateId, explorerContractUrl } from '@/lib/stellar'
-import { formatDateTime } from '@/lib/format'
-import EmptyState from '@/components/EmptyState'
+import { useContracts } from '@/lib/useContracts'
+import { getAlerts, getContracts, getContracts as getAllContracts, onAlertsChange } from '@/lib/storage'
+import { WatchedContract, AlertPayload } from '@/types'
+import { formatDate, formatAmount } from '@/lib/format'
+import { truncateId, explorerTxUrl } from '@/lib/stellar'
+import { Network } from '@/types'
+import NetworkBadge from '@/components/NetworkBadge'
 
-interface AlertRow extends AlertPayload {
-  contractLabel: string
-}
-
-export default function AlertsPage() {
-  const [contracts, setContracts] = useState<WatchedContract[]>([])
-  const [allAlerts, setAllAlerts] = useState<AlertRow[]>([])
+export default function GlobalAlertsPage() {
+  const { contracts } = useContracts()
+  const [allAlerts, setAllAlerts] = useState<AlertPayload[]>([])
   const [mounted, setMounted] = useState(false)
-  const [filterContract, setFilterContract] = useState<string | null>(null)
-  const [filterNetwork, setFilterNetwork] = useState<Network | null>(null)
-  const [filterRule, setFilterRule] = useState<AlertRuleType | null>(null)
+  const [searchHash, setSearchHash] = useState('')
+  const [selectedNetwork, setSelectedNetwork] = useState<Network | 'all'>('all')
+  const [selectedContract, setSelectedContract] = useState<string>('all')
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
 
   useEffect(() => {
-    const contracts = getContracts()
-    setContracts(contracts)
-
-    // Build alert rows with contract labels
-    const contractMap = new Map(
-      contracts.map((c) => [c.contract_id, c.label])
-    )
-    const alerts = getAllAlertsWithLabels(contracts)
-    setAllAlerts(alerts)
-    setMounted(true)
-
-    // Subscribe to storage changes
-    const unsubscribeContracts = onContractsChange(() => {
-      const updated = getContracts()
-      setContracts(updated)
-      const contractMap = new Map(
-        updated.map((c) => [c.contract_id, c.label])
-      )
-      setAllAlerts(getAllAlertsWithLabels(updated))
-    })
-
-    const unsubscribeAlerts = onAlertsChange(() => {
-      setAllAlerts(getAllAlertsWithLabels(contracts))
-    })
-
-    return () => {
-      unsubscribeContracts()
-      unsubscribeAlerts()
+    const loadAlerts = () => {
+      const alerts = loadAllAlerts()
+      setAllAlerts(alerts)
+      setMounted(true)
     }
+    loadAlerts()
+
+    const unsubscribe = onAlertsChange(() => {
+      loadAlerts()
+    })
+
+    return () => unsubscribe()
   }, [])
 
-  const getAllAlertsWithLabels = useCallback(
-    (contractsList: WatchedContract[]): AlertRow[] => {
-      const contractMap = new Map(
-        contractsList.map((c) => [c.contract_id, c.label])
-      )
-      const allAlerts: AlertPayload[] = contractsList.flatMap((c) =>
-        getAlerts(c.contract_id)
-      )
-      return allAlerts
-        .map((a) => ({
-          ...a,
-          contractLabel: contractMap.get(a.contract_id) ?? 'Unknown',
-        }))
-        .sort((a, b) => b.timestamp - a.timestamp)
-    },
-    []
-  )
+  const contractMap = useMemo(() => {
+    const map: Record<string, WatchedContract> = {}
+    getAllContracts().forEach(c => { map[c.id] = c })
+    return map
+  }, [])
 
-  const networks = [...new Set(contracts.map((c) => c.network))] as Network[]
-  const ruleTypes: AlertRuleType[] = [
-    'LargeTransfer',
-    'AdminFunctionCalled',
-    'AnyTransaction',
-    'FunctionCalled',
-    'TransactionFailed',
-  ]
+  const filteredAlerts = useMemo(() => {
+    let filtered = [...allAlerts]
 
-  const filteredAlerts = allAlerts.filter((a) => {
-    if (filterContract && a.contract_id !== filterContract) return false
-    if (filterNetwork && a.network !== filterNetwork) return false
-    if (filterRule && a.rule_triggered !== filterRule) return false
-    return true
-  })
+    if (selectedNetwork !== 'all') {
+      filtered = filtered.filter(a => a.network === selectedNetwork)
+    }
+
+    if (selectedContract !== 'all') {
+      filtered = filtered.filter(a => a.contract_id === selectedContract)
+    }
+
+    if (searchHash) {
+      const searchLower = searchHash.toLowerCase()
+      filtered = filtered.filter(a => 
+        a.transaction_hash.toLowerCase().includes(searchLower)
+      )
+    }
+
+    filtered.sort((a, b) => 
+      sortOrder === 'desc' ? b.timestamp - a.timestamp : a.timestamp - b.timestamp
+    )
+
+    return filtered
+  }, [allAlerts, selectedNetwork, selectedContract, searchHash, sortOrder])
+
+  const networks = useMemo(() => {
+    const nets = new Set(allAlerts.map(a => a.network as Network))
+    return ['all', ...nets] as const
+  }, [allAlerts])
+
+  const contractOptions = useMemo(() => {
+    const contractsWithAlerts = new Set(allAlerts.map(a => a.contract_id))
+    return ['all', ...contractsWithAlerts]
+  }, [allAlerts])
 
   if (!mounted) return null
-
-  if (contracts.length === 0) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <EmptyState
-          title="No contracts registered"
-          description="Add your first Soroban contract to see alerts in the global feed."
-          action={
-            <Link
-              href="/contracts/new"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
-            >
-              Add Contract
-            </Link>
-          }
-        />
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-100">Global Alert Feed</h1>
-          <p className="text-sm text-zinc-500 mt-1">
-            All recent alerts across your monitored contracts
-          </p>
+          <p className="text-sm text-zinc-500 mt-1">View alerts across all registered contracts</p>
         </div>
-        <Link
-          href="/contracts"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-          </svg>
-          Back to Contracts
-        </Link>
       </div>
 
-      {/* Filter Controls */}
-      <div className="flex flex-wrap gap-2">
-        <select
-          value={filterContract ?? ''}
-          onChange={(e) =>
-            setFilterContract(e.target.value || null)
-          }
-          className="px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="">All Contracts</option>
-          {contracts.map((c) => (
-            <option key={c.id} value={c.contract_id}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filterNetwork ?? ''}
-          onChange={(e) =>
-            setFilterNetwork((e.target.value as Network) || null)
-          }
-          className="px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="">All Networks</option>
-          {networks.map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filterRule ?? ''}
-          onChange={(e) => setFilterRule((e.target.value as AlertRuleType) || null)}
-          className="px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="">All Rule Types</option>
-          {ruleTypes.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-      </div>
+      {/* Filters */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-4">
+        {/* Search by transaction hash */}
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1">
+            <label htmlFor="hash-search" className="sr-only">Search by transaction hash</label>
+            <input
+              id="hash-search"
+              type="text"
+              placeholder="Search by transaction hash..."
+              value={searchHash}
+              onChange={(e) => setSearchHash(e.target.value)}
+              className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+          </div>
 
-      {/* Results Count */}
-      <div className="flex justify-between items-center mb-2">
-        <span className="text-xs text-zinc-500">
-          {filteredAlerts.length} of {allAlerts.length} alerts
-        </span>
-      </div>
-
-      {filteredAlerts.length === 0 ? (
-        <EmptyState
-          title="No matching alerts"
-          description="Try adjusting your filters to see alerts."
-        />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-800 text-left">
-                <th className="pb-3 pr-4 text-xs font-medium text-zinc-500 uppercase tracking-wider">Time</th>
-                <th className="pb-3 pr-4 text-xs font-medium text-zinc-500 uppercase tracking-wider">Contract</th>
-                <th className="pb-3 pr-4 text-xs font-medium text-zinc-500 uppercase tracking-wider">Rule</th>
-                <th className="pb-3 pr-4 text-xs font-medium text-zinc-500 uppercase tracking-wider">Tx Hash</th>
-                <th className="pb-3 text-xs font-medium text-zinc-500 uppercase tracking-wider">Amount</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800/50">
-              {filteredAlerts.map((alert, i) => (
-                <tr key={i} className="hover:bg-zinc-800/30 transition-colors">
-                  <td className="py-3 pr-4 text-zinc-400 whitespace-nowrap">
-                    {formatDateTime(alert.timestamp)}
-                  </td>
-                  <td className="py-3 pr-4">
-                    <Link
-                      href={explorerContractUrl(alert.network as Network, alert.contract_id)}
-                      className="text-sm font-mono text-indigo-400 hover:text-indigo-300 transition-colors truncate max-w-[120px] block"
-                    >
-                      {alert.contractLabel}
-                    </Link>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <span
-                      className={`px-2 py-0.5 rounded text-xs font-mono ${
-                        alert.rule_triggered === 'TransactionFailed'
-                          ? 'bg-red-900/30 text-red-400 border border-red-900/50'
-                          : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
-                      }`}
-                    >
-                      {alert.rule_triggered}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <a
-                      href={`https://stellar.expert/explorer/testnet/tx/${alert.transaction_hash}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-indigo-400 hover:text-indigo-300 transition-colors"
-                    >
-                      {truncateId(alert.transaction_hash)}
-                    </a>
-                  </td>
-                  <td className="py-3 text-zinc-400">
-                    {alert.amount !== undefined ? `${alert.amount} XLM` : 'N/A'}
-                  </td>
-                </tr>
+          {/* Network filter */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="network-filter" className="text-sm text-zinc-400">Network:</label>
+            <select
+              id="network-filter"
+              value={selectedNetwork}
+              onChange={(e) => setSelectedNetwork(e.target.value as Network | 'all')}
+              className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            >
+              {networks.map((net) => (
+                <option key={net} value={net}>
+                  {net === 'all' ? 'All Networks' : net.charAt(0).toUpperCase() + net.slice(1)}
+                </option>
               ))}
-            </tbody>
-          </table>
+            </select>
+          </div>
+
+          {/* Contract filter */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="contract-filter" className="text-sm text-zinc-400">Contract:</label>
+            <select
+              id="contract-filter"
+              value={selectedContract}
+              onChange={(e) => setSelectedContract(e.target.value)}
+              className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent max-w-xs"
+            >
+              {contractOptions.map((id) => (
+                <option key={id} value={id}>
+                  {id === 'all' ? 'All Contracts' : contractMap[id]?.label || truncateId(id, 12)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Sort order */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="sort-order" className="text-sm text-zinc-400">Sort:</label>
+            <select
+              id="sort-order"
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value as 'desc' | 'asc')}
+              className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            >
+              <option value="desc">Newest First</option>
+              <option value="asc">Oldest First</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2">
+          <div className="bg-zinc-800 rounded-lg p-3">
+            <p className="text-2xl font-bold text-zinc-100">{allAlerts.length}</p>
+            <p className="text-xs text-zinc-500">Total Alerts</p>
+          </div>
+          <div className="bg-zinc-800 rounded-lg p-3">
+            <p className="text-2xl font-bold text-zinc-100">{filteredAlerts.length}</p>
+            <p className="text-xs text-zinc-500">Filtered</p>
+          </div>
+          <div className="bg-zinc-800 rounded-lg p-3">
+            <p className="text-2xl font-bold text-zinc-100">{new Set(allAlerts.map(a => a.contract_id)).size}</p>
+            <p className="text-xs text-zinc-500">Contracts</p>
+          </div>
+          <div className="bg-zinc-800 rounded-lg p-3">
+            <p className="text-2xl font-bold text-zinc-100">{new Set(allAlerts.map(a => a.network)).size}</p>
+            <p className="text-xs text-zinc-500">Networks</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Alert Feed */}
+      {filteredAlerts.length === 0 ? (
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center space-y-4 max-w-sm">
+            <div className="flex justify-center">
+              <svg className="w-16 h-16 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-zinc-100">No alerts found</h2>
+            <p className="text-sm text-zinc-400">
+              {searchHash ? 'Try a different transaction hash' : 'No alerts match your filters'}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filteredAlerts.map((alert) => {
+            const contract = contractMap[alert.contract_id]
+            const network = alert.network as Network
+            return (
+              <Link
+                key={alert.transaction_hash}
+                href={`/contracts/${contract?.id || alert.contract_id}`}
+                className="block bg-zinc-900 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 hover:bg-zinc-800/50 transition-colors"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center">
+                      <NetworkBadge network={network} size="sm" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium text-zinc-100 truncate">
+                          {contract?.label || truncateId(alert.contract_id, 12)}
+                        </p>
+                        <NetworkBadge network={network} size="xs" />
+                      </div>
+                      <p className="text-xs text-zinc-500 truncate font-mono">
+                        {alert.transaction_hash}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:items-end sm:flex-row gap-2 w-full sm:w-auto">
+                    <div className="text-right">
+                      <p className="text-sm font-mono text-zinc-300">{alert.rule_triggered}</p>
+                      {alert.amount !== undefined && (
+                        <p className="text-xs text-indigo-400">
+                          {formatAmount(alert.amount)} XLM
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-zinc-300">{formatDate(alert.timestamp)}</p>
+                      <p className="text-xs text-zinc-500">
+                        {new Date(alert.timestamp).toLocaleTimeString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            )
+          })}
         </div>
       )}
+
+      {/* Pagination would go here for large datasets */}
     </div>
   )
 }
+
+function loadAllAlerts(): AlertPayload[] {
+  if (typeof window === 'undefined') return []
+  try {
+    return JSON.parse(window.localStorage.getItem('txwatch_alerts') ?? '[]')
+  } catch {
+    return []
+  }
+}
+
+import { AlertPayload } from '@/types'
