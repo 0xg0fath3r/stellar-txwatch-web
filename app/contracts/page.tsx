@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { WatchedContract, Network } from '@/types'
-import { getContracts, getAlerts, deleteContract } from '@/lib/storage'
+import { getContracts, deleteContract } from '@/lib/storage'
 import { STORAGE_KEYS } from '@/lib/storageKeys'
 import { useContractListState } from '@/hooks/useContractListState'
+import { useLastAlertTimes } from '@/hooks/useAlerts'
 import ContractCard from '@/components/ContractCard'
 import ContractListToolbar from '@/components/ContractListToolbar'
 import BulkActionBar from '@/components/BulkActionBar'
@@ -23,9 +24,11 @@ export default function ContractsPage() {
   const [allContracts, setAllContracts] = useState<WatchedContract[]>([])
   const [mounted, setMounted] = useState(false)
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
+  const lastAlertTimes = useLastAlertTimes()
   const list = useContractListState(allContracts, searchParams?.get('q') ?? '')
 
   useEffect(() => {
+    document.title = 'Contracts · TxWatch'
     setAllContracts(getContracts())
     setMounted(true)
   }, [])
@@ -64,7 +67,7 @@ export default function ContractsPage() {
       <div key={contract.id} className="relative">
         <ContractCard
           contract={contract}
-          lastAlertTime={getAlerts(contract.contract_id)[0]?.timestamp}
+          lastAlertTime={lastAlertTimes[contract.contract_id]}
           highlight={highlightedId === contract.id}
         />
         <input
