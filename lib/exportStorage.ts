@@ -10,7 +10,28 @@ export interface StoredContractExport {
   address: string;
   label: string;
   network: string;
+  notes?: string;
   [key: string]: unknown;
+}
+
+const MAX_NOTES_LENGTH = 1000;
+
+function normalizeNotes(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.slice(0, MAX_NOTES_LENGTH);
+}
+
+function normalizeContract(contract: StoredContractExport): StoredContractExport {
+  const normalized: StoredContractExport = { ...contract };
+  const notes = normalizeNotes(contract.notes);
+  if (notes === undefined) {
+    delete normalized.notes;
+  } else {
+    normalized.notes = notes;
+  }
+  return normalized;
 }
 
 function readContractsFromStorage(storageKey: string): StoredContractExport[] {
@@ -27,7 +48,7 @@ function readContractsFromStorage(storageKey: string): StoredContractExport[] {
 export function buildContractSnapshot(
   storageKey = 'txwatch:contracts',
 ): ContractExportSnapshot {
-  const contracts = readContractsFromStorage(storageKey);
+  const contracts = readContractsFromStorage(storageKey).map(normalizeContract);
   return {
     version: 1,
     exportedAt: new Date().toISOString(),
@@ -63,5 +84,9 @@ export function parseContractSnapshot(json: string): ContractExportSnapshot {
     );
   }
 
-  return parsed as ContractExportSnapshot;
+  const snapshot = parsed as ContractExportSnapshot;
+  return {
+    ...snapshot,
+    contracts: snapshot.contracts.map(normalizeContract),
+  };
 }
