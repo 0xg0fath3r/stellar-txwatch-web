@@ -640,6 +640,14 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
         )}
       </div>
 
+      {/* Activity Heatmap */}
+      <div>
+        <h2 className="text-lg font-semibold text-zinc-100 mb-3">Alert Activity</h2>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+          <AlertHeatmap alerts={alerts} contractId={contract.contract_id} />
+        </div>
+      </div>
+
       {/* Alert History */}
       <div>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">

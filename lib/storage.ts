@@ -373,6 +373,53 @@ export function getTodayAlertCount(): number {
   return load(ALERTS_KEY, AlertPayloadSchema).filter((a) => a.timestamp >= start).length
 }
 
+export interface DailyAlertCount {
+  date: string
+  count: number
+}
+
+function formatDateKey(d: Date): string {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+export function getDailyAlertCounts(
+  contractIdOrAlerts: string | AlertPayload[],
+  days = 30
+): DailyAlertCount[] {
+  const alerts = typeof contractIdOrAlerts === 'string'
+    ? getAlerts(contractIdOrAlerts)
+    : (contractIdOrAlerts ?? [])
+
+  const countMap: Record<string, number> = {}
+  for (const alert of alerts) {
+    if (alert && alert.timestamp) {
+      const key = formatDateKey(new Date(alert.timestamp))
+      countMap[key] = (countMap[key] ?? 0) + 1
+    }
+  }
+
+  const result: DailyAlertCount[] = []
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(d.getDate() - i)
+    const key = formatDateKey(d)
+    result.push({
+      date: key,
+      count: countMap[key] ?? 0,
+    })
+  }
+
+  return result
+}
+
+export const getAlertCountsByDay = getDailyAlertCounts
+
 export function onAlertsChange(callback: () => void): () => void {
   const handler = (e: StorageEvent) => {
     if (e.key === ALERTS_KEY) {
