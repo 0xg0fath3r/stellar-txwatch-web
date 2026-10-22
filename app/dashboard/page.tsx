@@ -16,6 +16,7 @@ export default function DashboardPage() {
   const activeContracts = contracts.filter((c) => c.enabled).length
   const pausedContracts = contracts.length - activeContracts
   const activeWebhooks = contracts.filter((c) => c.webhook_url).length
+  const activeRules = contracts.reduce((sum, c) => sum + c.rules.length, 0)
   const networkCounts = contracts.reduce<Record<Network, number>>((counts, contract) => {
     counts[contract.network] = (counts[contract.network] ?? 0) + 1
     return counts
@@ -64,6 +65,7 @@ export default function DashboardPage() {
         {[
           { label: 'Alerts Today', value: alertsToday, href: '/contracts?filter=alerts' },
           { label: 'Active Webhooks', value: activeWebhooks, href: '/contracts?filter=webhooks' },
+          { label: 'Active Rules', value: activeRules, href: '/contracts?filter=rules' },
         ].map((stat) => (
           <Link key={stat.label} href={stat.href} className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 transition-colors">
             <p className="text-2xl font-bold text-zinc-100">{stat.value}</p>
