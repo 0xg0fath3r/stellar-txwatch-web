@@ -122,6 +122,48 @@ describe('saveContract / getContracts', () => {
   });
 });
 
+describe('contract notes', () => {
+  it('saves and retrieves a contract with notes', () => {
+    saveContract(contractWithNotes);
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(1);
+    expect(contracts[0].notes).toBe(contractWithNotes.notes);
+  });
+
+  it('preserves line breaks in notes', () => {
+    saveContract(contractWithNotes);
+    expect(getContracts()[0].notes).toContain('\n');
+  });
+
+  it('saves a contract without notes (optional field)', () => {
+    saveContract(contract1);
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(1);
+    expect(contracts[0].notes).toBeUndefined();
+  });
+
+  it('updates notes when saving a duplicate id', () => {
+    saveContract(contract1);
+    saveContract({ ...contract1, notes: 'Updated notes' });
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(1);
+    expect(contracts[0].notes).toBe('Updated notes');
+  });
+
+  it('accepts notes of exactly 1000 characters', () => {
+    const notes = 'a'.repeat(1000);
+    saveContract({ ...contract1, notes });
+    expect(getContracts()[0].notes).toBe(notes);
+  });
+
+  it('rejects or truncates notes longer than 1000 characters', () => {
+    const notes = 'a'.repeat(1001);
+    saveContract({ ...contract1, notes });
+    const stored = getContracts()[0].notes;
+    expect(stored === undefined || stored.length <= 1000).toBe(true);
+  });
+});
+
 describe('deleteContract', () => {
   it('removes the correct contract by id', () => {
     saveContract(contract1);

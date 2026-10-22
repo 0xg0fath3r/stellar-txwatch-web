@@ -298,6 +298,11 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
       return
     }
 
+    if (editedNotes.length > 1000) {
+      setMetadataError('Notes must be 1000 characters or less')
+      return
+    }
+
     // Save changes
     const updated = { 
       ...contract!, 
@@ -354,6 +359,9 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
   if (!contract) return <ContractDetailLoading />
 
   const isPaused = contract.enabled === false
+
+  const isMainnet = contract.network === 'mainnet'
+  const canDelete = !isMainnet || deleteConfirmText === contract.label
 
   return (
     <div className="space-y-8 max-w-4xl">
@@ -851,15 +859,32 @@ const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
                 <li>All {alerts.length} alert {alerts.length === 1 ? 'record' : 'records'}</li>
               </ul>
             </div>
+            {isMainnet && (
+              <div>
+                <label htmlFor="delete-confirm" className="block text-sm font-medium text-zinc-300 mb-2">
+                  Type <span className="text-zinc-100 font-mono">{contract.label}</span> to confirm
+                </label>
+                <input
+                  id="delete-confirm"
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder={contract.label}
+                  autoComplete="off"
+                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
+              </div>
+            )}
             <div className="flex gap-3">
               <button
                 onClick={handleDelete}
-                className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-sm font-medium text-white transition-colors"
+                disabled={!canDelete}
+                className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-600"
               >
                 Delete
               </button>
               <button
-                onClick={() => setShowDelete(false)}
+                onClick={() => { setShowDelete(false); setDeleteConfirmText('') }}
                 className="flex-1 px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
               >
                 Cancel
