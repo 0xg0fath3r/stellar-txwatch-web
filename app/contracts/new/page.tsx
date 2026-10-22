@@ -21,6 +21,13 @@ interface FormErrors {
   rules?: string
   wallet?: string
   network?: string
+  signers?: string
+}
+
+const STELLAR_PUBLIC_KEY_REGEX = /^G[A-Z2-7]{55}$/
+
+function isValidPublicKey(key: string): boolean {
+  return STELLAR_PUBLIC_KEY_REGEX.test(key)
 }
 
 export default function NewContractPage() {
@@ -36,6 +43,8 @@ export default function NewContractPage() {
   const [webhookSecret, setWebhookSecret] = useState('')
   const [showSecret, setShowSecret] = useState(false)
   const [rules, setRules] = useState<AlertRule[]>([])
+  const [signers, setSigners] = useState<string[]>([])
+  const [signerInput, setSignerInput] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
   const [saving, setSaving] = useState(false)
   const [testStatus, setTestStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle')
@@ -133,8 +142,36 @@ export default function NewContractPage() {
     setDraftRestored(false)
   }
 
+  // Pre-fill the connected wallet as the first signer (only when empty)
+  useEffect(() => {
+    if (publicKey && signers.length === 0) {
+      setSigners([publicKey])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publicKey])
+
   function handleWalletConnect() {
     setErrors((prev) => ({ ...prev, wallet: undefined }))
+  }
+
+  function addSigner() {
+    const trimmed = signerInput.trim()
+    if (!trimmed) return
+    if (!isValidPublicKey(trimmed)) {
+      setErrors((prev) => ({ ...prev, signers: 'Must be a valid Stellar public key (starts with G, 56 chars)' }))
+      return
+    }
+    if (signers.includes(trimmed)) {
+      setErrors((prev) => ({ ...prev, signers: 'Signer already added' }))
+      return
+    }
+    setSigners([...signers, trimmed])
+    setSignerInput('')
+    setErrors((prev) => ({ ...prev, signers: undefined }))
+  }
+
+  function removeSigner(key: string) {
+    setSigners(signers.filter((s) => s !== key))
   }
 
   function validate(): FormErrors {
@@ -234,7 +271,13 @@ export default function NewContractPage() {
     setTestError(null)
     setTestStatusCode(null)
     try {
-      const { status, ok } = await sendTestWebhook(trimmedWebhookUrl, trimmedContractId, network, controller.signal)
+      const { status, ok } = await sendTestWebhook(
+        trimmedWebhookUrl,
+        trimmedContractId,
+        network,
+        controller.signal,
+        signers.length > 0 ? signers : undefined
+      )
       setTestStatusCode(status)
       if (ok) {
         setTestStatus('ok')

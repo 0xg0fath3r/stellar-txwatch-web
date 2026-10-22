@@ -164,6 +164,7 @@ export async function sendTestWebhook(
       'TEST_HASH_0000000000000000000000000000000000000000000000000000000000000000',
     timestamp: Date.now(),
     horizon_link: `${HORIZON_URLS[network]}/transactions/test`,
+    ...(signers && signers.length > 0 ? { signers } : {}),
   }
 
   let signal: AbortSignal | undefined
