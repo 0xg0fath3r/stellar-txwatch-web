@@ -5,6 +5,12 @@ import { AlertRule, AlertRuleType } from '@/types'
 import { formatRuleSummary } from '@/lib/format'
 import { HORIZON_URLS } from '@/lib/stellar'
 import AlertRuleBadge from './AlertRuleBadge'
+import {
+  getRuleTemplates,
+  saveRuleTemplate,
+  deleteRuleTemplate,
+  onRuleTemplatesChange,
+} from '@/lib/storage'
 
 const RULE_TYPES: AlertRuleType[] = [
   'AnyTransaction',
@@ -57,6 +63,7 @@ interface RuleBuilderProps {
 }
 
 const emptyRule = (): AlertRule => ({ type: 'AnyTransaction' })
+const newTemplateId = () => `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
 const SAC_CONTRACT_ID_REGEX = /^C[A-Z2-7]{55}$/
 

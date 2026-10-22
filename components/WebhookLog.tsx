@@ -100,6 +100,15 @@ export default function WebhookLog({ alerts, network }: WebhookLogProps) {
 
       {/* Filter Controls */}
       <div className="flex flex-wrap gap-2">
+        <div className="flex-1 min-w-[200px]">
+          <input
+            type="text"
+            placeholder="Search tx hash..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
         <button
           onClick={() => setSelectedFilter(null)}
           className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
@@ -141,7 +150,9 @@ export default function WebhookLog({ alerts, network }: WebhookLogProps) {
         </div>
 
         {filteredAlerts.length === 0 ? (
-          <p className="text-sm text-zinc-500 py-4">No alerts match the selected filter.</p>
+          <p className="text-sm text-zinc-500 py-4">
+            No matching alerts{searchQuery ? ` for "${searchQuery}"` : ''}.
+          </p>
         ) : (
           /*
            * We use a div-based grid layout instead of a native <table> so that

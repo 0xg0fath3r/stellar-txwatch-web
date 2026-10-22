@@ -75,3 +75,10 @@ declare global {
     __freighterPublicKey?: string | null
   }
 }
+
+export interface RuleTemplate {
+  id: string
+  name: string
+  rules: AlertRule[]
+  created_at: number
+}
