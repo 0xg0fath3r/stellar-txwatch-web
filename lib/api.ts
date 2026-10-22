@@ -11,6 +11,9 @@ export async function apiFetch<T>(
   if (!headers.has('content-type')) {
     headers.set('Content-Type', 'application/json')
   }
+  for (const [name, value] of Object.entries(getAuthHeaders())) {
+    headers.set(name, value)
+  }
 
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,

@@ -26,6 +26,7 @@ export interface AnalyticsEventProperties {
 }
 
 // Stub: replace this function body to integrate a real analytics provider.
+/* eslint-disable @typescript-eslint/no-unused-vars */
 function trackEventStub(
   _event: AnalyticsEventName,
   _properties?: AnalyticsEventProperties,
@@ -34,6 +35,7 @@ function trackEventStub(
   void _event
   void _properties
 }
+/* eslint-enable @typescript-eslint/no-unused-vars */
 
 export function useAnalytics() {
   return { trackEvent: trackEventStub }
