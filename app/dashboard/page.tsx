@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useContracts } from '@/lib/useContracts'
-import { useTodayAlertCount, useLastAlertTimes } from '@/lib/useAlerts'
+import { useContracts } from '@/hooks/useContracts'
+import { useTodayAlertCount, useLastAlertTimes } from '@/hooks/useAlerts'
 import ContractCard from '@/components/ContractCard'
 import EmptyState from '@/components/EmptyState'
 import NetworkBadge from '@/components/NetworkBadge'

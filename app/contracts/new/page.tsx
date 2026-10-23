@@ -1,10 +1,19 @@
 'use client'
 
+import { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { AlertRule, Network, WatchedContract } from '@/types'
+import { isValidContractId, isValidUrl } from '@/lib/stellar'
+import { saveContract, getContracts } from '@/lib/storage'
+import { STORAGE_KEYS } from '@/lib/storageKeys'
+import { sendTestWebhook } from '@/lib/api'
+import { useFreighterConnection } from '@/hooks/useFreighterConnection'
 import RuleBuilder from '@/components/RuleBuilder'
 import FreighterConnect from '@/components/FreighterConnect'
 import Toast from '@/components/Toast'
+import Button from '@/components/ui/Button'
 
-const DRAFT_STORAGE_KEY = 'txwatch_new_contract_draft'
+const DRAFT_STORAGE_KEY = STORAGE_KEYS.NEW_CONTRACT_DRAFT
 
 interface ContractDraft {
   label: string
@@ -287,7 +296,7 @@ export default function NewContractPage() {
     }
     await addContract(contract)
     try {
-      sessionStorage.setItem('txwatch_last_created_contract', contract.id)
+      sessionStorage.setItem(STORAGE_KEYS.LAST_CREATED_CONTRACT, contract.id)
     } catch {
       // ignore storage errors
     }
@@ -557,20 +566,15 @@ export default function NewContractPage() {
               onChange={(e) => {              setWebhookUrl(e.target.value); setErrors((prev) => ({ ...prev, webhook_url: undefined })); setTestStatus('idle'); setTestStatusCode(null) }}
               className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
             />
-            <button
-              type="button"
+            <Button
               onClick={handleTestWebhook}
-              disabled={testStatus === 'sending'}
-              className="inline-flex items-center gap-2 px-3 py-2.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-300 hover:text-zinc-100 transition-colors disabled:opacity-50 whitespace-nowrap"
+              loading={testStatus === 'sending'}
+              variant="secondary"
+              size="lg"
+              className="whitespace-nowrap"
             >
-              {testStatus === 'sending' && (
-                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-              )}
               {testStatus === 'sending' ? 'Sending…' : testStatus === 'ok' ? `${testStatusCode} OK` : testStatus === 'error' ? `${testStatusCode ?? 'ERR'} Failed` : 'Test'}
-            </button>
+            </Button>
           </div>
           <p className="mt-1.5 text-xs text-zinc-400">HTTP and HTTPS are supported. Example: <span className="font-mono">https://api.example.com/alerts</span></p>
           {errors.webhook_url && <p className="mt-1 text-xs text-red-400">{errors.webhook_url}</p>}
@@ -626,21 +630,21 @@ export default function NewContractPage() {
 
         {/* Actions */}
         <div className="flex items-center gap-3 pt-2">
-          <button
-            type="button"
+          <Button
             onClick={handleSave}
-            disabled={saving}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium text-white transition-colors"
+            loading={saving}
+            variant="primary"
+            size="lg"
           >
             {saving ? 'Saving...' : 'Save Contract'}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             onClick={() => requestNavigation(null)}
-            className="px-4 py-2.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+            variant="ghost"
+            size="lg"
           >
             Cancel
-          </button>
+          </Button>
         </div>
       </div>
       </div>

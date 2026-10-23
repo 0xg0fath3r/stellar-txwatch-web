@@ -1,15 +1,16 @@
 import { z } from 'zod'
 import { WatchedContract, AlertPayload, Network } from '@/types'
+import { STORAGE_KEYS } from '@/lib/storageKeys'
 import {
   STORAGE_QUOTA_BYTES,
   MAX_ALERTS_PER_CONTRACT,
   ALERTS_RETENTION_DAYS,
 } from './constants'
 
-const CONTRACTS_KEY = 'txwatch_contracts'
-const ALERTS_KEY = 'txwatch_alerts'
-const SETTINGS_KEY = 'txwatch_settings'
-const STORAGE_VERSION_KEY = 'txwatch_storage_version'
+const CONTRACTS_KEY = STORAGE_KEYS.CONTRACTS
+const ALERTS_KEY = STORAGE_KEYS.ALERTS
+const SETTINGS_KEY = STORAGE_KEYS.SETTINGS
+const STORAGE_VERSION_KEY = STORAGE_KEYS.STORAGE_VERSION
 const CURRENT_STORAGE_VERSION = 2
 
 function getStorage(): Storage | undefined {
@@ -443,11 +444,11 @@ export function onContractsChange(callback: () => void): () => void {
 /**
  * API key management for txwatch-core backend authentication.
  *
- * The key is stored in localStorage under `txwatch_api_key` and sent as a
+ * The key is stored in localStorage under `STORAGE_KEYS.API_KEY` and sent as a
  * Bearer token on requests to the txwatch-core API when
  * `NEXT_PUBLIC_API_URL` is configured.
  */
-const API_KEY_STORAGE_KEY = 'txwatch_api_key'
+const API_KEY_STORAGE_KEY = STORAGE_KEYS.API_KEY
 
 export function getApiKey(): string | null {
   const storage = getStorage()
