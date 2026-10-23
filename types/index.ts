@@ -10,6 +10,7 @@ import {
 // Types are inferred from the zod schemas in lib/schemas.ts, which are the
 // single source of truth for both compile-time types and runtime validation.
 export type Network = z.infer<typeof NetworkSchema>
+export type AlertRuleType = z.infer<typeof AlertRuleTypeSchema>
 
 export type ExplorerId = 'stellar-expert' | 'stellarchain' | 'horizon'
 
