@@ -16,6 +16,7 @@ export default function DashboardPage() {
   const activeContracts = contracts.filter((c) => c.enabled).length
   const pausedContracts = contracts.length - activeContracts
   const activeWebhooks = contracts.filter((c) => c.webhook_url).length
+  const activeRules = contracts.reduce((sum, c) => sum + c.rules.length, 0)
   const networkCounts = contracts.reduce<Record<Network, number>>((counts, contract) => {
     counts[contract.network] = (counts[contract.network] ?? 0) + 1
     return counts
