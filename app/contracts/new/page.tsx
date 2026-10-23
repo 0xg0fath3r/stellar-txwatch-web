@@ -40,6 +40,46 @@ function isValidPublicKey(key: string): boolean {
   return STELLAR_PUBLIC_KEY_REGEX.test(key)
 }
 
+interface ImportRowError {
+  line: number
+  message: string
+}
+
+interface ImportSummary {
+  imported: number
+  skipped: number
+  errors: ImportRowError[]
+}
+
+const VALID_NETWORKS: Network[] = ['testnet', 'mainnet', 'futurenet']
+const CSV_HEADER = ['contract_id', 'label', 'network', 'webhook_url']
+
+function parseCsvLine(line: string): string[] {
+  const cells: string[] = []
+  let current = ''
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { current += '"'; i++ }
+        else inQuotes = false
+      } else {
+        current += ch
+      }
+    } else if (ch === '"') {
+      inQuotes = true
+    } else if (ch === ',') {
+      cells.push(current)
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  cells.push(current)
+  return cells.map((c) => c.trim())
+}
+
 export default function NewContractPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -306,6 +346,103 @@ export default function NewContractPage() {
     }
   }
 
+  function handleImportClick() {
+    setImportSummary(null)
+    fileInputRef.current?.click()
+  }
+
+  async function handleCsvFile(file: File) {
+    if (!isConnected) {
+      setErrors((prev) => ({ ...prev, wallet: 'Connect your Freighter wallet to import contracts' }))
+      return
+    }
+    setImporting(true)
+    setImportSummary(null)
+    try {
+      const text = await file.text()
+      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
+      const rowErrors: ImportRowError[] = []
+      let imported = 0
+      let skipped = 0
+
+      if (lines.length === 0) {
+        setImportSummary({ imported: 0, skipped: 0, errors: [{ line: 0, message: 'CSV file is empty' }] })
+        return
+      }
+
+      const header = parseCsvLine(lines[0]).map((h) => h.toLowerCase())
+      const hasHeader = CSV_HEADER.every((col) => header.includes(col))
+      const colIndex: Record<string, number> = {}
+      if (hasHeader) {
+        CSV_HEADER.forEach((col) => { colIndex[col] = header.indexOf(col) })
+      } else {
+        CSV_HEADER.forEach((col, i) => { colIndex[col] = i })
+      }
+
+      const existing = getContracts()
+      const seen = new Set(existing.map((c) => `${c.contract_id}:${c.network}`))
+      const dataLines = hasHeader ? lines.slice(1) : lines
+
+      dataLines.forEach((line, idx) => {
+        const lineNumber = hasHeader ? idx + 2 : idx + 1
+        const cells = parseCsvLine(line)
+        const get = (col: string) => (cells[colIndex[col]] ?? '').trim()
+        const rowContractId = get('contract_id')
+        const rowLabel = get('label')
+        const rowNetwork = get('network').toLowerCase()
+        const rowWebhookUrl = get('webhook_url')
+
+        const rowIssues: string[] = []
+        if (!rowContractId) rowIssues.push('contract_id is required')
+        else if (!isValidContractId(rowContractId)) rowIssues.push('invalid contract_id')
+        if (!rowLabel) rowIssues.push('label is required')
+        if (!rowNetwork) rowIssues.push('network is required')
+        else if (!VALID_NETWORKS.includes(rowNetwork as Network)) rowIssues.push(`invalid network "${rowNetwork}"`)
+        if (!rowWebhookUrl) rowIssues.push('webhook_url is required')
+        else if (!isValidUrl(rowWebhookUrl)) rowIssues.push('invalid webhook_url')
+
+        if (rowIssues.length === 0) {
+          const key = `${rowContractId}:${rowNetwork}`
+          if (seen.has(key)) rowIssues.push('duplicate contract already registered')
+        }
+
+        if (rowIssues.length > 0) {
+          skipped++
+          rowErrors.push({ line: lineNumber, message: rowIssues.join('; ') })
+          return
+        }
+
+        const contract: WatchedContract = {
+          id: crypto.randomUUID(),
+          label: rowLabel,
+          contract_id: rowContractId,
+          network: rowNetwork as Network,
+          rules: [],
+          webhook_url: rowWebhookUrl,
+          created_at: Date.now(),
+        }
+        saveContract(contract)
+        seen.add(`${rowContractId}:${rowNetwork}`)
+        imported++
+      })
+
+      setImportSummary({ imported, skipped, errors: rowErrors })
+      setToast({
+        message: `${imported} contract${imported === 1 ? '' : 's'} imported, ${skipped} skipped`,
+        type: skipped > 0 ? 'error' : 'success',
+      })
+    } catch (err) {
+      setImportSummary({
+        imported: 0,
+        skipped: 0,
+        errors: [{ line: 0, message: err instanceof Error ? err.message : 'Failed to read CSV file' }],
+      })
+    } finally {
+      setImporting(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
   return (
     <>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -510,7 +647,7 @@ export default function NewContractPage() {
           </Button>
         </div>
       </div>
-    </div>
+      </div>
     </>
   )
 }
