@@ -61,6 +61,26 @@ export function useContracts() {
     setLoading(false)
   }, [adapter])
 
+  /**
+   * When the API is configured, fetch the authoritative list from the server
+   * and reconcile it into localStorage (server is source of truth).
+   */
+  const syncFromApi = useCallback(async () => {
+    if (!isApiConfigured()) return
+    setSyncStatus('syncing')
+    try {
+      const remote = await fetchContractsFromApi()
+      // Write each remote contract into localStorage
+      for (const c of remote) {
+        saveContract(c)
+      }
+      setContracts(getContracts())
+      setSyncStatus('synced')
+    } catch {
+      setSyncStatus('error')
+    }
+  }, [])
+
   useEffect(() => {
     refresh()
     return adapter.subscribe((change) => {
@@ -71,11 +91,31 @@ export function useContracts() {
   function add(contract: WatchedContract): void {
     saveContract(contract)
     refresh()
+    // Mirror to API
+    if (isApiConfigured()) {
+      setSyncStatus('syncing')
+      try {
+        await saveContractToApi(contract)
+        setSyncStatus('synced')
+      } catch {
+        setSyncStatus('error')
+      }
+    }
   }
 
   function remove(id: string): void {
     deleteContract(id)
     refresh()
+    // Mirror to API
+    if (isApiConfigured()) {
+      setSyncStatus('syncing')
+      try {
+        await deleteContractFromApi(id)
+        setSyncStatus('synced')
+      } catch {
+        setSyncStatus('error')
+      }
+    }
   }
 
   function update(contract: WatchedContract): void {

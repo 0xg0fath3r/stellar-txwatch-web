@@ -3,12 +3,6 @@ import type { Network } from '@/types'
 
 const BASE_URL = env.NEXT_PUBLIC_API_URL
 
-function getAuthHeaders(): Record<string, string> {
-  // Extension point for future authenticated requests
-  // Implement token/header logic here
-  return {}
-}
-
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit
@@ -16,6 +10,9 @@ export async function apiFetch<T>(
   const headers = new Headers(options?.headers)
   if (!headers.has('content-type')) {
     headers.set('Content-Type', 'application/json')
+  }
+  for (const [name, value] of Object.entries(getAuthHeaders())) {
+    headers.set(name, value)
   }
 
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -167,21 +164,28 @@ export async function sendTestWebhook(
       'TEST_HASH_0000000000000000000000000000000000000000000000000000000000000000',
     timestamp: Date.now(),
     horizon_link: `${HORIZON_URLS[network]}/transactions/test`,
+    ...(signers && signers.length > 0 ? { signers } : {}),
   }
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  let signal: AbortSignal | undefined
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+  if (typeof timeoutOrSignal === 'number') {
+    const controller = new AbortController()
+    timeoutId = setTimeout(() => controller.abort(), timeoutOrSignal)
+    signal = controller.signal
+  } else {
+    signal = timeoutOrSignal
+  }
 
   try {
     const res = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: controller.signal,
+      signal,
     })
-    if (!res.ok) {
-      throw new Error(`Webhook returned ${res.status}`)
-    }
+    return { status: res.status, ok: res.ok }
   } catch (error) {
     const err = error as { name?: string }
     if (err?.name === 'AbortError') {
@@ -189,6 +193,8 @@ export async function sendTestWebhook(
     }
     throw error
   } finally {
-    clearTimeout(timeoutId)
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId)
+    }
   }
 }

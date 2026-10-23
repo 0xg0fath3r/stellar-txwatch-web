@@ -373,6 +373,53 @@ export function getTodayAlertCount(): number {
   return load(ALERTS_KEY, AlertPayloadSchema).filter((a) => a.timestamp >= start).length
 }
 
+export interface DailyAlertCount {
+  date: string
+  count: number
+}
+
+function formatDateKey(d: Date): string {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+export function getDailyAlertCounts(
+  contractIdOrAlerts: string | AlertPayload[],
+  days = 30
+): DailyAlertCount[] {
+  const alerts = typeof contractIdOrAlerts === 'string'
+    ? getAlerts(contractIdOrAlerts)
+    : (contractIdOrAlerts ?? [])
+
+  const countMap: Record<string, number> = {}
+  for (const alert of alerts) {
+    if (alert && alert.timestamp) {
+      const key = formatDateKey(new Date(alert.timestamp))
+      countMap[key] = (countMap[key] ?? 0) + 1
+    }
+  }
+
+  const result: DailyAlertCount[] = []
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(d.getDate() - i)
+    const key = formatDateKey(d)
+    result.push({
+      date: key,
+      count: countMap[key] ?? 0,
+    })
+  }
+
+  return result
+}
+
+export const getAlertCountsByDay = getDailyAlertCounts
+
 export function onAlertsChange(callback: () => void): () => void {
   const handler = (e: StorageEvent) => {
     if (e.key === ALERTS_KEY) {
@@ -391,4 +438,36 @@ export function onContractsChange(callback: () => void): () => void {
   }
   window.addEventListener('storage', handler)
   return () => window.removeEventListener('storage', handler)
+}
+
+/**
+ * API key management for txwatch-core backend authentication.
+ *
+ * The key is stored in localStorage under `txwatch_api_key` and sent as a
+ * Bearer token on requests to the txwatch-core API when
+ * `NEXT_PUBLIC_API_URL` is configured.
+ */
+const API_KEY_STORAGE_KEY = 'txwatch_api_key'
+
+export function getApiKey(): string | null {
+  const storage = getStorage()
+  if (!storage) return null
+  return storage.getItem(API_KEY_STORAGE_KEY)
+}
+
+export function setApiKey(key: string): void {
+  const storage = getStorage()
+  if (!storage) return
+  const trimmed = key.trim()
+  if (trimmed) {
+    storage.setItem(API_KEY_STORAGE_KEY, trimmed)
+  } else {
+    storage.removeItem(API_KEY_STORAGE_KEY)
+  }
+}
+
+export function clearApiKey(): void {
+  const storage = getStorage()
+  if (!storage) return
+  storage.removeItem(API_KEY_STORAGE_KEY)
 }

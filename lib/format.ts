@@ -3,6 +3,10 @@ import { AlertRule } from '@/types'
 /**
  * Shared formatting helpers for dates used across the app.
  * For ID truncation use truncateId() from @/lib/stellar.
+ *
+ * Note: formatDate/formatDateTime here always use the browser's local
+ * timezone. Components that need to respect the user's UTC/local toggle
+ * should use useTimezone() from @/components/TimezoneProvider instead.
  */
 
 /** Formats a Unix ms timestamp as a locale date string (e.g. "5/29/2026"). */
