@@ -188,6 +188,17 @@ export default function WebhookLog({
         ))}
       </div>
 
+      {/* Search by transaction hash */}
+      <div className="flex justify-end mb-2">
+        <input
+          type="text"
+          placeholder="Search transaction hash…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="px-3 py-1.5 rounded-lg text-xs bg-zinc-950 border border-zinc-800 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-64"
+        />
+      </div>
+
       {/* Export and Results */}
       <div className="overflow-x-auto">
         <div className="flex justify-between items-center mb-2">
