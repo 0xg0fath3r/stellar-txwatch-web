@@ -126,14 +126,17 @@ function setStorageVersion(version: number): void {
   storage.setItem(STORAGE_VERSION_KEY, version.toString())
 }
 
-export function migrateStorage(migrations: Record<number, () => void>): void {
+export function migrateStorage(
+  migrations: Record<number, () => void>,
+  targetVersion: number = CURRENT_STORAGE_VERSION
+): void {
   const currentVersion = getStorageVersion()
-  for (let v = currentVersion + 1; v <= CURRENT_STORAGE_VERSION; v++) {
+  for (let v = currentVersion + 1; v <= targetVersion; v++) {
     if (migrations[v]) {
       migrations[v]()
     }
   }
-  setStorageVersion(CURRENT_STORAGE_VERSION)
+  setStorageVersion(targetVersion)
 }
 
 /**
