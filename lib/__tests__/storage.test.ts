@@ -1,11 +1,20 @@
+import { vi } from 'vitest';
 import {
   saveContract,
   deleteContract,
+  restoreContract,
   getContracts,
+  getContract,
   saveAlert,
+  addAlert,
   getAlerts,
   deleteAlert,
+  deleteAlerts,
+  deleteAlertsByContractId,
+  migrateStorage,
+  getNetworkDistribution,
 } from '../storage';
+import { WatchedContract, AlertPayload, Network } from '@/types';
 
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -14,19 +23,85 @@ const localStorageMock = (() => {
     setItem:   (key: string, value: string) => { store[key] = value; },
     removeItem:(key: string) => { delete store[key]; },
     clear:     () => { store = {}; },
+    get length() { return Object.keys(store).length; },
+    key:       (i: number) => Object.keys(store)[i] ?? null,
   };
 })();
 
+const CONTRACTS_KEY = 'txwatch_contracts';
+const ALERTS_KEY = 'txwatch_alerts';
+const VERSION_KEY = 'txwatch_storage_version';
+
+function makeContract(overrides: Partial<WatchedContract> = {}): WatchedContract {
+  return {
+    id: 'c1',
+    label: 'Test Contract',
+    contract_id: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA7',
+    network: 'testnet',
+    rules: [],
+    webhook_url: '',
+    created_at: 1000,
+    updated_at: 1000,
+    ...overrides,
+  };
+}
+
+function makeAlert(overrides: Partial<AlertPayload> = {}): AlertPayload {
+  return {
+    label: 'Alert',
+    contract_id: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA7',
+    network: 'testnet',
+    rule_triggered: 'AnyTransaction',
+    transaction_hash: 'tx',
+    timestamp: Date.now(),
+    horizon_link: 'https://horizon-testnet.stellar.org/transactions/tx',
+    ...overrides,
+  };
+}
+
+function readRaw<T>(key: string): T {
+  return JSON.parse(localStorageMock.getItem(key) ?? '[]');
+}
+
 Object.defineProperty(global, 'localStorage', { value: localStorageMock });
 
-const contract1 = { id: 'c1', address: 'GABC...001', label: 'Contract Alpha', network: 'mainnet' };
-const contract2 = { id: 'c2', address: 'GDEF...002', label: 'Contract Beta',  network: 'testnet' };
+function makeContract(id: string, label: string, network: Network): WatchedContract {
+  return {
+    id,
+    label,
+    contract_id: `C-${id}`,
+    network,
+    rules: [],
+    webhook_url: '',
+    created_at: 0,
+    updated_at: 0,
+  };
+}
 
-const alert1 = { id: 'a1', contractId: 'c1', type: 'transfer', threshold: 100 };
-const alert2 = { id: 'a2', contractId: 'c1', type: 'invocation', threshold: 0 };
-const alert3 = { id: 'a3', contractId: 'c1', type: 'balance',   threshold: 500 };
+function makeAlert(id: string, contractId: string): AlertPayload {
+  return {
+    id,
+    label: `Alert ${id}`,
+    contract_id: contractId,
+    network: 'mainnet',
+    rule_triggered: 'AnyTransaction',
+    transaction_hash: `hash-${id}`,
+    timestamp: Date.now(),
+    horizon_link: `https://horizon.stellar.org/transactions/hash-${id}`,
+  };
+}
 
-beforeEach(() => localStorageMock.clear());
+const contract1 = makeContract('c1', 'Contract Alpha', 'mainnet');
+const contract2 = makeContract('c2', 'Contract Beta', 'testnet');
+
+const alert1 = makeAlert('a1', 'c1');
+const alert2 = makeAlert('a2', 'c1');
+const alert3 = makeAlert('a3', 'c1');
+
+beforeEach(() => {
+  localStorageMock.clear();
+  clearStorageErrorHandlers();
+});
 
 describe('saveContract / getContracts', () => {
   it('saves a contract and retrieves it', () => {
@@ -44,6 +119,48 @@ describe('saveContract / getContracts', () => {
 
   it('returns empty array when no contracts saved (empty fallback)', () => {
     expect(getContracts()).toEqual([]);
+  });
+});
+
+describe('contract notes', () => {
+  it('saves and retrieves a contract with notes', () => {
+    saveContract(contractWithNotes);
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(1);
+    expect(contracts[0].notes).toBe(contractWithNotes.notes);
+  });
+
+  it('preserves line breaks in notes', () => {
+    saveContract(contractWithNotes);
+    expect(getContracts()[0].notes).toContain('\n');
+  });
+
+  it('saves a contract without notes (optional field)', () => {
+    saveContract(contract1);
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(1);
+    expect(contracts[0].notes).toBeUndefined();
+  });
+
+  it('updates notes when saving a duplicate id', () => {
+    saveContract(contract1);
+    saveContract({ ...contract1, notes: 'Updated notes' });
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(1);
+    expect(contracts[0].notes).toBe('Updated notes');
+  });
+
+  it('accepts notes of exactly 1000 characters', () => {
+    const notes = 'a'.repeat(1000);
+    saveContract({ ...contract1, notes });
+    expect(getContracts()[0].notes).toBe(notes);
+  });
+
+  it('rejects or truncates notes longer than 1000 characters', () => {
+    const notes = 'a'.repeat(1001);
+    saveContract({ ...contract1, notes });
+    const stored = getContracts()[0].notes;
+    expect(stored === undefined || stored.length <= 1000).toBe(true);
   });
 });
 
@@ -67,6 +184,67 @@ describe('deleteContract', () => {
     saveContract(contract1);
     deleteContract('c1');
     expect(getContracts()).toEqual([]);
+  });
+});
+
+describe('enabled flag defaults', () => {
+  it('defaults enabled to true when saving a contract without the flag', () => {
+    saveContract(contract1);
+    expect(getContracts()[0].enabled).toBe(true);
+  });
+
+  it('preserves an explicit enabled: false on save', () => {
+    saveContract({ ...contract1, enabled: false });
+    expect(getContracts()[0].enabled).toBe(false);
+  });
+
+  it('migrates legacy stored contracts without enabled to enabled: true', () => {
+    localStorageMock.setItem(
+      'watched_contracts',
+      JSON.stringify([{ ...contract1 }, { ...contract2, enabled: false }]),
+    );
+    const contracts = getContracts();
+    expect(contracts).toHaveLength(2);
+    expect(contracts[0].enabled).toBe(true);
+    expect(contracts[1].enabled).toBe(false);
+  });
+});
+
+describe('restoreContract', () => {
+  it('restores a deleted contract exactly', () => {
+    saveContract(contract1);
+    saveContract(contract2);
+    const snapshot = getContracts().find(c => c.id === 'c1');
+    deleteContract('c1');
+    restoreContract(snapshot);
+    const restored = getContracts().find(c => c.id === 'c1');
+    expect(restored).toEqual(snapshot);
+    expect(getContracts()).toHaveLength(2);
+  });
+
+  it('restores a contract with enabled: false preserved', () => {
+    saveContract({ ...contract1, enabled: false });
+    const snapshot = getContracts()[0];
+    deleteContract('c1');
+    restoreContract(snapshot);
+    expect(getContracts()[0].enabled).toBe(false);
+  });
+
+  it('restores multiple contracts for bulk undo', () => {
+    saveContract(contract1);
+    saveContract(contract2);
+    const snapshots = getContracts();
+    deleteContract('c1');
+    deleteContract('c2');
+    expect(getContracts()).toEqual([]);
+    snapshots.forEach(c => restoreContract(c));
+    expect(getContracts().map(c => c.id)).toEqual(['c1', 'c2']);
+  });
+
+  it('does not duplicate when restoring an existing contract', () => {
+    saveContract(contract1);
+    restoreContract(getContracts()[0]);
+    expect(getContracts()).toHaveLength(1);
   });
 });
 
@@ -193,3 +371,62 @@ describe('pruneOldAlerts', () => {
     expect(alerts).toHaveLength(1);
   });
 });
+
+describe('migrateStorage', () => {
+  it('does not call migration functions when already at current version', () => {
+    localStorageMock.setItem(STORAGE_VERSION_KEY, CURRENT_STORAGE_VERSION.toString());
+    const migration1 = vi.fn();
+    const migration2 = vi.fn();
+    migrateStorage({ 1: migration1, 2: migration2 });
+
+    expect(migration1).not.toHaveBeenCalled();
+    expect(migration2).not.toHaveBeenCalled();
+  });
+
+  it('calls migration for that version exactly once when one migration is needed', () => {
+    localStorageMock.setItem(STORAGE_VERSION_KEY, '0');
+    const migration1 = vi.fn();
+    migrateStorage({ 1: migration1 }, 1);
+
+    expect(migration1).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs multiple migrations in ascending version order', () => {
+    localStorageMock.setItem(STORAGE_VERSION_KEY, '0');
+    const callOrder: number[] = [];
+    const migrations: Record<number, () => void> = {
+      2: vi.fn(() => callOrder.push(2)),
+      1: vi.fn(() => callOrder.push(1)),
+      3: vi.fn(() => callOrder.push(3)),
+    };
+
+    migrateStorage(migrations, 3);
+
+    expect(callOrder).toEqual([1, 2, 3]);
+    expect(migrations[1]).toHaveBeenCalledTimes(1);
+    expect(migrations[2]).toHaveBeenCalledTimes(1);
+    expect(migrations[3]).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips missing migration for a version gracefully', () => {
+    localStorageMock.setItem(STORAGE_VERSION_KEY, '0');
+    const callOrder: number[] = [];
+    const migrations: Record<number, () => void> = {
+      1: vi.fn(() => callOrder.push(1)),
+      // version 2 is missing
+      3: vi.fn(() => callOrder.push(3)),
+    };
+
+    expect(() => migrateStorage(migrations, 3)).not.toThrow();
+    expect(callOrder).toEqual([1, 3]);
+  });
+
+  it('sets storage version to CURRENT_STORAGE_VERSION after migration', () => {
+    localStorageMock.setItem(STORAGE_VERSION_KEY, '0');
+    const migration1 = vi.fn();
+    migrateStorage({ 1: migration1 });
+
+    expect(localStorageMock.getItem(STORAGE_VERSION_KEY)).toBe(CURRENT_STORAGE_VERSION.toString());
+  });
+});
+

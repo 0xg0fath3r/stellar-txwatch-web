@@ -7,7 +7,10 @@ import MobileNav from '@/components/MobileNav'
 import WebVitals from '@/components/WebVitals'
 
 export const metadata: Metadata = {
-  title: 'TxWatch — Soroban Contract Monitoring',
+  title: {
+    default: 'TxWatch',
+    template: '%s · TxWatch',
+  },
   description: 'Real-time monitoring and alerts for Soroban smart contracts',
 }
 
@@ -28,6 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <nav className="hidden sm:flex items-center gap-6 text-sm text-zinc-400">
               <Link href="/dashboard" className="hover:text-zinc-100 transition-colors">Dashboard</Link>
               <Link href="/contracts" className="hover:text-zinc-100 transition-colors">Contracts</Link>
+              <Link href="/settings" className="hover:text-zinc-100 transition-colors">Settings</Link>
               <a
                 href="https://github.com/Tx-wat"
                 target="_blank"
@@ -39,6 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </nav>
 
             <div className="flex items-center gap-3">
+              <HeaderSyncStatus />
               <WalletStatusBadge />
               <FreighterConnect />
             </div>
@@ -47,8 +52,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </header>
 
         <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
-          {children}
+          <StorageProvider>{children}</StorageProvider>
         </main>
+        </ToastProvider>
+        </TimezoneProvider>
       </body>
     </html>
   )

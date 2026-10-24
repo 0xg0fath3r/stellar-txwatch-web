@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "analyze": "ANALYZE=true next build",
+    "size": "size-limit",
     "start": "next start",
     "lint": "next lint",
     "format": "prettier --write .",
@@ -13,10 +15,13 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^17.2.1",
+    "@stellar/freighter-api": "^2.0.0",
+    "@stellar/stellar-sdk": "^15.1.0",
+    "@tanstack/react-virtual": "3.13.2",
     "next": "14.2.35",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@playwright/test": "^1.42.1",
@@ -32,5 +37,11 @@
     "tailwindcss": "^3.4.1",
     "typescript": "^5",
     "vitest": "^1.6.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ]
   }
 }

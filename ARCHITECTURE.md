@@ -28,7 +28,11 @@ This document maps key files and directories to their functional areas, helping 
 | `NetworkBadge.tsx` | Network indicator — Mainnet/Testnet/Futurenet badge |
 | `CopyButton.tsx` | Clipboard utility — copy contract ID, transaction hash |
 | `MobileNav.tsx` | Mobile navigation drawer — responsive menu |
+| `AlertHeatmap.tsx` | Contract activity heatmap — 30-day alert frequency visualization |
 | `EmptyState.tsx` | Empty list placeholder — no contracts, no rules, no history |
+| `ContractListToolbar.tsx` | Contract list search, network filter, sort and view controls |
+| `BulkActionBar.tsx` | Contract list bulk selection and delete actions |
+| `ui/Button.tsx` | Shared button — primary/secondary/danger/ghost variants, sizes, loading state |
 
 ### `/lib` — Business Logic & Utilities
 
@@ -37,7 +41,22 @@ This document maps key files and directories to their functional areas, helping 
 | `stellar.ts` | Stellar integration — Horizon URLs, Soroban RPC, contract validation, explorer links |
 | `storage.ts` | localStorage persistence — contract registry, settings, cache |
 | `api.ts` | Backend communication — fetch wrapper, webhook test, API calls |
-| `useContracts.ts` | React hook — contract state management, CRUD operations |
+| `storageKeys.ts` | Single source of truth for every localStorage / sessionStorage key |
+
+### `/hooks` — React Hooks
+
+All React hooks live in `hooks/`. Non-hook helpers belong in `lib/`.
+
+| File | Responsibility |
+|---|---|
+| `useContracts.ts` | Contract state management, CRUD operations |
+| `useContractListState.ts` | Contract list search, network filter, sort, pagination and bulk selection |
+| `useAlerts.ts` | Alert history for a single contract |
+| `useWallet.ts` | Wallet public key state |
+| `useFreighter.ts` | Freighter extension detection and connection |
+| `useFreighterConnection.ts` | Freighter connection status for forms |
+| `useAnalytics.ts` | No-op analytics `trackEvent` hook |
+| `useSortedLog.ts` | Timestamp sorting for log entries |
 
 ### `/types` — TypeScript Definitions
 
